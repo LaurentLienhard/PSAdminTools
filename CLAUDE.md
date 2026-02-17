@@ -21,6 +21,7 @@ When developing this module, follow standard PowerShell module structure:
 ## Git Workflow
 
 - **Le fichier README.md doit être mis à jour avant chaque `git commit` et `git push`** pour refléter les nouveautés (nouvelles fonctions, changements d'API, nouvelles dépendances, etc.)
+- **Les messages de commit doivent être concis mais suffisamment exhaustifs** pour comprendre clairement les modifications apportées (quoi et pourquoi)
 
 ## Code Style
 
@@ -31,6 +32,7 @@ When developing this module, follow standard PowerShell module structure:
 - Tests must use mocks for external dependencies (no real API/AD/network calls)
 - Each function/class must achieve **minimum 85% code coverage**
 - **Prefer `Write-Verbose` over `Write-Host` or `Write-Output`** for informational messages
+- **Toujours générer ou mettre à jour les fichiers d'aide dans `source/en-US/`** lors de l'ajout ou la modification de fonctions
 
 ### Function Structure
 - Use **uppercase** for `BEGIN`, `PROCESS`, `END` blocks
@@ -147,10 +149,10 @@ Write-Error "Failed to process '$Name' in domain '$($env:USERDOMAIN)': $($_.Exce
 
 ### PowerShell Compatibility
 
-- **Minimum**: PowerShell 5.1 (Windows PowerShell)
-- Use explicit null checks (`-eq $null`, `-ne $null`) instead of `??` or `?.`
-- Use `if/else` instead of ternary operators
-- Avoid `ForEach-Object -Parallel` (PowerShell 7+ only) for core functionality
+- **Minimum**: PowerShell 7.0
+- **Pas d'alias ni de ternaires** : utiliser les noms complets des cmdlets et `if/else` pour la lisibilité
+- Toujours placer `$null` à gauche dans les comparaisons : `$null -eq $variable`, `$null -ne $variable` (évite les comportements inattendus avec les collections)
+- `ForEach-Object -Parallel` peut être utilisé si nécessaire pour optimiser les performances d'une fonction
 - Use `Join-Path` for cross-platform path handling
 
 ### Performance
