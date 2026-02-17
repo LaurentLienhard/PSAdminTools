@@ -20,8 +20,8 @@ When developing this module, follow standard PowerShell module structure:
 
 ## Git Workflow
 
-- **Le fichier README.md doit être mis à jour avant chaque `git commit` et `git push`** pour refléter les nouveautés (nouvelles fonctions, changements d'API, nouvelles dépendances, etc.)
-- **Les messages de commit doivent être concis mais suffisamment exhaustifs** pour comprendre clairement les modifications apportées (quoi et pourquoi)
+- **README.md must be updated before every `git commit` and `git push`** to reflect changes (new functions, API changes, new dependencies, etc.)
+- **Commit messages must be concise but exhaustive enough** to clearly understand what was changed and why
 
 ## Code Style
 
@@ -32,7 +32,7 @@ When developing this module, follow standard PowerShell module structure:
 - Tests must use mocks for external dependencies (no real API/AD/network calls)
 - Each function/class must achieve **minimum 85% code coverage**
 - **Prefer `Write-Verbose` over `Write-Host` or `Write-Output`** for informational messages
-- **Toujours générer ou mettre à jour les fichiers d'aide dans `source/en-US/`** lors de l'ajout ou la modification de fonctions
+- **Always generate or update help files in `source/en-US/`** when adding or modifying functions
 
 ### Function Structure
 - Use **uppercase** for `BEGIN`, `PROCESS`, `END` blocks
@@ -150,9 +150,9 @@ Write-Error "Failed to process '$Name' in domain '$($env:USERDOMAIN)': $($_.Exce
 ### PowerShell Compatibility
 
 - **Minimum**: PowerShell 7.0
-- **Pas d'alias ni de ternaires** : utiliser les noms complets des cmdlets et `if/else` pour la lisibilité
-- Toujours placer `$null` à gauche dans les comparaisons : `$null -eq $variable`, `$null -ne $variable` (évite les comportements inattendus avec les collections)
-- `ForEach-Object -Parallel` peut être utilisé si nécessaire pour optimiser les performances d'une fonction
+- **No aliases or ternary operators**: always use full cmdlet names and `if/else` for readability
+- Always place `$null` on the left side of comparisons: `$null -eq $variable`, `$null -ne $variable` (avoids unexpected behavior with collections)
+- `ForEach-Object -Parallel` may be used when necessary to optimize function performance
 - Use `Join-Path` for cross-platform path handling
 
 ### Performance

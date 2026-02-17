@@ -9,6 +9,7 @@ PowerShell module providing administration tools for system management.
 ## Requirements
 
 - PowerShell 7.0 or later
+- ActiveDirectory module (RSAT) for AD-related functions
 - Build dependencies are automatically resolved on first build
 
 ## Build & Test
@@ -58,7 +59,34 @@ output/                 # Build artifacts (generated)
 
 ## Available Functions
 
-*No public functions exported yet — module is in initial setup.*
+### Get-PSATSitesReport
+
+Generates a comprehensive Active Directory Sites and Services audit report.
+
+Returns a `PSATSitesReport` object containing:
+- **Sites**: All AD sites with their subnets, site links, domain controllers, and adjacent sites
+- **Subnets**: All AD subnets with site assignments
+- **Site Links**: All site links with cost, replication frequency, and transport type
+- **Health Indicators**: Sites without DCs, sites without subnets, subnets without site assignments
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-Server` | string | AD DS instance to connect to |
+| `-Credential` | PSCredential | Credentials for the AD connection |
+
+**Examples:**
+```powershell
+# Basic usage
+Get-PSATSitesReport
+
+# Query a specific domain controller
+Get-PSATSitesReport -Server 'dc01.contoso.com'
+
+# Use explicit credentials
+$cred = Get-Credential
+Get-PSATSitesReport -Credential $cred
+```
 
 ## License
 
