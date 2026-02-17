@@ -1,0 +1,43 @@
+TOPIC
+    about_PSAdminTools
+
+SHORT DESCRIPTION
+    PSAdminTools is a PowerShell administration tools module.
+
+LONG DESCRIPTION
+    PSAdminTools provides administration tools for system management, including
+    Active Directory auditing and reporting capabilities.
+
+    Available Commands:
+
+    Get-PSATSitesReport
+        Generates a comprehensive Active Directory Sites and Services audit
+        report. Returns a PSATSitesReport object containing full topology
+        information including sites, subnets, site links, domain controllers,
+        and health indicators such as sites without DCs, sites without subnets,
+        and subnets without site assignments.
+
+        Parameters:
+            -Server      Specifies the AD DS instance to connect to.
+            -Credential  Specifies credentials for the AD connection.
+
+EXAMPLES
+    PS C:\> Get-PSATSitesReport
+
+    Returns a full AD Sites and Services report using the current user's credentials.
+
+    PS C:\> Get-PSATSitesReport -Server 'dc01.contoso.com'
+
+    Returns a report querying a specific domain controller.
+
+NOTE:
+    Thank you to all those who contributed to this module, by writing code, sharing opinions, and provided feedback.
+
+TROUBLESHOOTING NOTE:
+    Look out on the Github repository for issues and new releases.
+
+SEE ALSO
+    - https://github.com/LaurentLienhard/PSAdminTools
+
+KEYWORDS
+    ActiveDirectory, AD, Sites, Subnets, SiteLinks, Administration, Audit
