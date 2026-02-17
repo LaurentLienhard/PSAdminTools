@@ -1,0 +1,24 @@
+TOPIC
+    about_PSAdminTools
+
+SHORT DESCRIPTION
+    PSAdminTools is a PowerShell administration tools module.
+
+LONG DESCRIPTION
+    PSAdminTools is a PowerShell administration tools module.
+
+EXAMPLES
+    PS C:\> {{ add examples here }}
+
+NOTE:
+    Thank you to all those who contributed to this module, by writing code, sharing opinions, and provided feedback.
+
+TROUBLESHOOTING NOTE:
+    Look out on the Github repository for issues and new releases.
+
+SEE ALSO
+    - {{ Please add Project URI such as github }}}
+
+KEYWORDS
+    {{ Add comma separated keywords here }}
+
