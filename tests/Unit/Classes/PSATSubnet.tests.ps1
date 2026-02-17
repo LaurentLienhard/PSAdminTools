@@ -1,6 +1,10 @@
 BeforeAll {
-    $classFile = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath '..', '..', 'source', 'Classes', '5.PSATSubnet.ps1'
-    . $classFile
+    $script:dscModuleName = 'PSAdminTools'
+
+    # Ensure the module is loaded (it should be loaded by the build, but just in case)
+    if (-not (Get-Module -Name $script:dscModuleName)) {
+        Import-Module -Name $script:dscModuleName -ErrorAction SilentlyContinue
+    }
 }
 
 Describe 'PSATSubnet' {

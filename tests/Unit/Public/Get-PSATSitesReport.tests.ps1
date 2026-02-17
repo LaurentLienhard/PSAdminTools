@@ -1,51 +1,23 @@
 BeforeAll {
-    # Load classes in dependency order
-    $classesPath = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath '..', '..', 'source', 'Classes'
-    . (Join-Path -Path $classesPath -ChildPath '5.PSATSubnet.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '6.PSATSiteLink.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '7.PSATSite.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '8.PSATSitesReport.ps1')
+    $script:dscModuleName = 'PSAdminTools'
 
-    # Load the function
-    $functionFile = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath '..', '..', 'source', 'Public', 'Get-PSATSitesReport.ps1'
-    . $functionFile
+    # Ensure the module is loaded (it should be loaded by the build, but just in case)
+    if (-not (Get-Module -Name $script:dscModuleName)) {
+        Import-Module -Name $script:dscModuleName -ErrorAction SilentlyContinue
+    }
 }
 
 Describe 'Get-PSATSitesReport' {
     BeforeAll {
-        # Mock Import-Module to prevent actual module loading
-        Mock Import-Module {}
-
         # Mock all AD cmdlets used by QueryAD
-        function Get-ADForest
-        {
-            param ($ErrorAction, $Server, $Credential)
-        }
-        function Get-ADReplicationSite
-        {
-            param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-        }
-        function Get-ADReplicationSubnet
-        {
-            param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-        }
-        function Get-ADReplicationSiteLink
-        {
-            param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-        }
-        function Get-ADDomainController
-        {
-            param ($Filter, $ErrorAction, $Server, $Credential)
-        }
-
-        Mock Get-ADForest {
+        Mock -CommandName Get-ADForest -ModuleName $script:dscModuleName {
             [PSCustomObject]@{
                 Name                = 'contoso.com'
                 PartitionsContainer = 'CN=Partitions,CN=Configuration,DC=contoso,DC=com'
             }
         }
 
-        Mock Get-ADReplicationSite {
+        Mock -CommandName Get-ADReplicationSite -ModuleName $script:dscModuleName {
             @(
                 [PSCustomObject]@{
                     Name        = 'Default-First-Site-Name'
@@ -55,15 +27,15 @@ Describe 'Get-PSATSitesReport' {
             )
         }
 
-        Mock Get-ADReplicationSubnet {
+        Mock -CommandName Get-ADReplicationSubnet -ModuleName $script:dscModuleName {
             @()
         }
 
-        Mock Get-ADReplicationSiteLink {
+        Mock -CommandName Get-ADReplicationSiteLink -ModuleName $script:dscModuleName {
             @()
         }
 
-        Mock Get-ADDomainController {
+        Mock -CommandName Get-ADDomainController -ModuleName $script:dscModuleName {
             @(
                 [PSCustomObject]@{
                     HostName = 'DC01.contoso.com'
@@ -99,7 +71,7 @@ Describe 'Get-PSATSitesReport' {
         It 'Should pass Server parameter to AD cmdlets' {
             Get-PSATSitesReport -Server 'dc01.contoso.com' | Out-Null
 
-            Should -Invoke Get-ADForest -ParameterFilter { $Server -eq 'dc01.contoso.com' }
+            Should -Invoke -CommandName Get-ADForest -ModuleName $script:dscModuleName -ParameterFilter { $Server -eq 'dc01.contoso.com' }
         }
 
         It 'Should pass Credential parameter to AD cmdlets' {
@@ -110,13 +82,13 @@ Describe 'Get-PSATSitesReport' {
 
             Get-PSATSitesReport -Credential $testCred | Out-Null
 
-            Should -Invoke Get-ADForest -ParameterFilter { $null -ne $Credential }
+            Should -Invoke -CommandName Get-ADForest -ModuleName $script:dscModuleName -ParameterFilter { $null -ne $Credential }
         }
     }
 
     Context 'Error handling - missing ActiveDirectory module' {
         It 'Should throw when ActiveDirectory module is not available' {
-            Mock Import-Module { throw [System.IO.FileNotFoundException]::new('Module not found') }
+            Mock -CommandName Import-Module { throw [System.IO.FileNotFoundException]::new('Module not found') }
 
             { Get-PSATSitesReport -ErrorAction Stop } | Should -Throw '*ActiveDirectory module*'
         }
@@ -124,8 +96,7 @@ Describe 'Get-PSATSitesReport' {
 
     Context 'Error handling - AD query failure' {
         It 'Should throw on AD exception' {
-            Mock Import-Module {}
-            Mock Get-ADForest { throw [System.Exception]::new('AD server unavailable') }
+            Mock -CommandName Get-ADForest -ModuleName $script:dscModuleName { throw [System.Exception]::new('AD server unavailable') }
 
             { Get-PSATSitesReport -ErrorAction Stop } | Should -Throw '*error*'
         }
@@ -133,8 +104,7 @@ Describe 'Get-PSATSitesReport' {
 
     Context 'Error handling - access denied' {
         It 'Should throw on unauthorized access' {
-            Mock Import-Module {}
-            Mock Get-ADForest { throw [System.UnauthorizedAccessException]::new('Access denied') }
+            Mock -CommandName Get-ADForest -ModuleName $script:dscModuleName { throw [System.UnauthorizedAccessException]::new('Access denied') }
 
             { Get-PSATSitesReport -ErrorAction Stop } | Should -Throw '*Access denied*'
         }

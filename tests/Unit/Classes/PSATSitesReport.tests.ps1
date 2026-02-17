@@ -1,10 +1,10 @@
 BeforeAll {
-    # Load classes in dependency order
-    $classesPath = Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath '..', '..', 'source', 'Classes'
-    . (Join-Path -Path $classesPath -ChildPath '5.PSATSubnet.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '6.PSATSiteLink.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '7.PSATSite.ps1')
-    . (Join-Path -Path $classesPath -ChildPath '8.PSATSitesReport.ps1')
+    $script:dscModuleName = 'PSAdminTools'
+
+    # Ensure the module is loaded (it should be loaded by the build, but just in case)
+    if (-not (Get-Module -Name $script:dscModuleName)) {
+        Import-Module -Name $script:dscModuleName -ErrorAction SilentlyContinue
+    }
 }
 
 Describe 'PSATSitesReport' {
@@ -155,36 +155,14 @@ Describe 'PSATSitesReport' {
 
     Context 'QueryAD method' {
         BeforeAll {
-            # Mock AD cmdlets
-            function Get-ADForest
-            {
-                param ($ErrorAction, $Server, $Credential)
-            }
-            function Get-ADReplicationSite
-            {
-                param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-            }
-            function Get-ADReplicationSubnet
-            {
-                param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-            }
-            function Get-ADReplicationSiteLink
-            {
-                param ($Filter, $Properties, $ErrorAction, $Server, $Credential)
-            }
-            function Get-ADDomainController
-            {
-                param ($Filter, $ErrorAction, $Server, $Credential)
-            }
-
-            Mock Get-ADForest {
+            Mock -CommandName Get-ADForest -ModuleName $script:dscModuleName {
                 [PSCustomObject]@{
                     Name                = 'contoso.com'
                     PartitionsContainer = 'CN=Partitions,CN=Configuration,DC=contoso,DC=com'
                 }
             }
 
-            Mock Get-ADReplicationSite {
+            Mock -CommandName Get-ADReplicationSite -ModuleName $script:dscModuleName {
                 @(
                     [PSCustomObject]@{
                         Name        = 'Paris'
@@ -199,7 +177,7 @@ Describe 'PSATSitesReport' {
                 )
             }
 
-            Mock Get-ADReplicationSubnet {
+            Mock -CommandName Get-ADReplicationSubnet -ModuleName $script:dscModuleName {
                 @(
                     [PSCustomObject]@{
                         Name              = '10.0.1.0/24'
@@ -211,7 +189,7 @@ Describe 'PSATSitesReport' {
                 )
             }
 
-            Mock Get-ADReplicationSiteLink {
+            Mock -CommandName Get-ADReplicationSiteLink -ModuleName $script:dscModuleName {
                 @(
                     [PSCustomObject]@{
                         Name                         = 'Paris-London'
@@ -228,7 +206,7 @@ Describe 'PSATSitesReport' {
                 )
             }
 
-            Mock Get-ADDomainController {
+            Mock -CommandName Get-ADDomainController -ModuleName $script:dscModuleName {
                 @(
                     [PSCustomObject]@{
                         HostName = 'DC01.contoso.com'
@@ -309,7 +287,7 @@ Describe 'PSATSitesReport' {
             $report = [PSATSitesReport]::new()
             $report.QueryAD(@{ Server = 'dc01.contoso.com' })
 
-            Should -Invoke Get-ADForest -ParameterFilter { $Server -eq 'dc01.contoso.com' }
+            Should -Invoke -CommandName Get-ADForest -ModuleName $script:dscModuleName -ParameterFilter { $Server -eq 'dc01.contoso.com' }
         }
     }
 }
