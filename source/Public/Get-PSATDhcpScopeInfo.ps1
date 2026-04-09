@@ -57,6 +57,15 @@ function Get-PSATDhcpScopeInfo {
                 $sRouter = ($scopeOptions | Where-Object { $_.OptionId -eq 3 }).Value
                 $sDomain = ($scopeOptions | Where-Object { $_.OptionId -eq 15 }).Value
 
+                if ($null -ne $sDns) { $resolvedDns = [string[]]$sDns; $dnsSource = 'Scope' }
+                else { $resolvedDns = [string[]]$serverDns; $dnsSource = 'Server' }
+
+                if ($null -ne $sDomain) { $resolvedDomain = [string]($sDomain | Select-Object -First 1) }
+                else { $resolvedDomain = [string]($serverDomain | Select-Object -First 1) }
+
+                if ($null -ne $sRouter) { $resolvedRouter = [string[]]$sRouter }
+                else { $resolvedRouter = [string[]]$serverRouter }
+
                 [PSCustomObject]@{
                     ScopeId          = $scope.ScopeId.IPAddressToString
                     Name             = $scope.Name
@@ -65,10 +74,10 @@ function Get-PSATDhcpScopeInfo {
                     StartRange       = $scope.StartRange.IPAddressToString
                     EndRange         = $scope.EndRange.IPAddressToString
                     LeaseDuration    = $scope.LeaseDuration
-                    DnsServers       = if ($null -ne $sDns) { [string[]]$sDns } else { [string[]]$serverDns }
-                    DnsServersSource = if ($null -ne $sDns) { 'Scope' } else { 'Server' }
-                    DomainName       = [string]((if ($null -ne $sDomain) { $sDomain } else { $serverDomain }) | Select-Object -First 1)
-                    Router           = if ($null -ne $sRouter) { [string[]]$sRouter } else { [string[]]$serverRouter }
+                    DnsServers       = $resolvedDns
+                    DnsServersSource = $dnsSource
+                    DomainName       = $resolvedDomain
+                    Router           = $resolvedRouter
                 }
             }
         }
