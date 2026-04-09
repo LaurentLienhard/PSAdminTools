@@ -69,7 +69,7 @@ RequiredModules = @()
 # NestedModules = @()
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = 'Get-PSATSitesReport'
+FunctionsToExport = @('Get-PSATDhcpScopeInfo','Get-PSATDnsDebugLog','Set-PSATDnsDebugLogging')
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = @()
@@ -107,7 +107,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = '## [0.0.1] - 2026-02-17
+        ReleaseNotes = '## [0.0.1] - 2026-04-09
 
 ### Added
 
