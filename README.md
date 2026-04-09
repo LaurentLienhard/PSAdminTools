@@ -88,6 +88,34 @@ $cred = Get-Credential
 Get-PSATSitesReport -Credential $cred
 ```
 
+### Set-PSATDnsDebugLogging
+
+Enables or disables DNS Debug Logging on a local or remote DNS server.
+Uses a CimSession for remote authentication, allowing execution from an admin workstation.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-Enable` | switch | Enable DNS debug logging (mutually exclusive with -Disable) |
+| `-Disable` | switch | Disable DNS debug logging (mutually exclusive with -Enable) |
+| `-LogFilePath` | string | Full path of the debug log file (required with -Enable) |
+| `-MaxLogFileSizeBytes` | long | Maximum log file size in bytes (default: 500000000) |
+| `-ComputerName` | string | Target DNS server (default: local machine) |
+| `-Credential` | PSCredential | Credentials for remote connection via CimSession |
+
+**Examples:**
+```powershell
+# Enable on a remote DNS server from admin workstation
+$cred = Get-Credential domain\adminuser
+Set-PSATDnsDebugLogging -Enable -LogFilePath 'C:\Temp\dns.log' `
+    -MaxLogFileSizeBytes 500000000 -ComputerName 'dc01.contoso.com' -Credential $cred
+
+# Disable debug logging
+Set-PSATDnsDebugLogging -Disable -ComputerName 'dc01.contoso.com' -Credential $cred
+```
+
+**Requirements:** DnsServer PowerShell module (RSAT DNS Server Tools)
+
 ## License
 
 [MIT](LICENSE) - (c) Laurent LIENHARD
