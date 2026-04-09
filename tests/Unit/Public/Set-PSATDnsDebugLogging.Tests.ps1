@@ -1,6 +1,31 @@
 BeforeAll {
     $script:ModuleRoot = Resolve-Path -Path "$PSScriptRoot/../../../source"
     . "$script:ModuleRoot/Public/Set-PSATDnsDebugLogging.ps1"
+
+    # Stub functions for cmdlets not available outside Windows (CIM, DnsServer module).
+    # Must be global so Pester's Mock (which calls Get-Command) can find them.
+    if (-not (Get-Command -Name 'New-CimSession' -ErrorAction SilentlyContinue))
+    {
+        function global:New-CimSession { }
+    }
+    if (-not (Get-Command -Name 'Remove-CimSession' -ErrorAction SilentlyContinue))
+    {
+        function global:Remove-CimSession { }
+    }
+    if (-not (Get-Command -Name 'Set-DnsServerDiagnostics' -ErrorAction SilentlyContinue))
+    {
+        function global:Set-DnsServerDiagnostics { }
+    }
+}
+
+AfterAll {
+    # Clean up global stubs added for cross-platform compatibility.
+    @('New-CimSession', 'Remove-CimSession', 'Set-DnsServerDiagnostics') | ForEach-Object {
+        if (Test-Path -Path "Function:global:$_")
+        {
+            Remove-Item -Path "Function:global:$_" -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 Describe 'Set-PSATDnsDebugLogging' {

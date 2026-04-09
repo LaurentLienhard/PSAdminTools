@@ -116,6 +116,52 @@ Set-PSATDnsDebugLogging -Disable -ComputerName 'dc01.contoso.com' -Credential $c
 
 **Requirements:** DnsServer PowerShell module (RSAT DNS Server Tools)
 
+### Get-PSATDnsDebugLog
+
+Parses a Windows DNS Server debug log file into structured PowerShell objects.
+Non-packet lines (headers, comments) are silently ignored.
+The DNS label-encoded format (e.g. `(3)www(6)google(3)com(0)`) is automatically decoded to a standard FQDN.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-Path` | string | Path to the DNS debug log file as seen on the target server (pipeline-capable) |
+| `-ComputerName` | string | Remote DNS server to read the log from (default: local machine) |
+| `-Credential` | PSCredential | Credentials for the remote connection (WinRM) |
+| `-StartTime` | datetime | Only return entries at or after this time |
+| `-EndTime` | datetime | Only return entries at or before this time |
+| `-Direction` | string | Filter by `Rcv` (received) or `Snd` (sent) |
+| `-RecordType` | string | Filter by DNS record type (A, AAAA, MX, PTR, SRV…) |
+| `-ClientIP` | string | Filter by exact client IP address |
+| `-QueryName` | string | Filter by query name, supports wildcards (e.g. `*.contoso.com`) |
+
+**Output properties per entry:** `Timestamp`, `Protocol`, `Direction`, `ClientIP`, `TransactionId`, `MessageType`, `RecordType`, `QueryName`, `ResponseCode`, `Flags`, `ThreadId`, `SourceComputer`
+
+**Examples:**
+```powershell
+# Parse all entries locally
+Get-PSATDnsDebugLog -Path 'C:\dns\dns.log'
+
+# Read from a remote DNS server
+$cred = Get-Credential domain\adminuser
+Get-PSATDnsDebugLog -Path 'C:\Windows\System32\dns\dns.log' -ComputerName 'dc01.contoso.com' -Credential $cred
+
+# Only inbound A record queries on a remote server
+Get-PSATDnsDebugLog -Path 'C:\dns\dns.log' -ComputerName 'dc01' -Direction Rcv -RecordType A
+
+# All failed lookups from a specific client
+Get-PSATDnsDebugLog -Path 'C:\dns\dns.log' -ClientIP '192.168.1.100' |
+    Where-Object { $_.ResponseCode -eq 'NXDOMAIN' }
+
+# Last hour of traffic
+Get-PSATDnsDebugLog -Path 'C:\dns\dns.log' -StartTime (Get-Date).AddHours(-1)
+
+# Aggregate from multiple local log files
+'C:\dns\dc01.log','C:\dns\dc02.log' | Get-PSATDnsDebugLog -RecordType MX
+```
+
+**Requirements:** WinRM must be enabled on the remote server for remote log access.
+
 ## License
 
 [MIT](LICENSE) - (c) Laurent LIENHARD
