@@ -132,6 +132,45 @@ Get-PSATDnsDebugLog -Path 'C:\dns\dns.log' -StartTime (Get-Date).AddHours(-1)
 
 **Requirements:** WinRM must be enabled on the remote server for remote log access.
 
+### Get-PSATDhcpScopeInfo
+
+Retrieves IPv4 DHCP scopes and their configured options from one or more DHCP servers.
+For each scope, the effective DNS server list is resolved by priority: scope-level option 6 first, then server-level fallback.
+The `DnsServersSource` property indicates where the effective DNS list comes from.
+Use `-DnsServer` to find all scopes that have a specific IP configured as a DNS server.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-ComputerName` | string[] | DHCP server(s) to query — pipeline-capable, default: local machine |
+| `-Credential` | PSCredential | Credentials for remote connection (WinRM) |
+| `-ScopeId` | string[] | Restrict query to one or more specific scope IDs (e.g. `192.168.1.0`) |
+| `-DnsServer` | string[] | Filter: only return scopes whose effective DNS list contains at least one of these IPs |
+| `-IncludeInactive` | switch | Also return inactive scopes (default: active only) |
+
+**Output properties per scope:** `ComputerName`, `ScopeId`, `Name`, `State`, `SubnetMask`, `StartRange`, `EndRange`, `LeaseDuration`, `DnsServers`, `DnsServersSource`, `DomainName`, `Router`
+
+**Examples:**
+```powershell
+# All active scopes from a remote DHCP server
+Get-PSATDhcpScopeInfo -ComputerName 'dhcp01.contoso.com'
+
+# Find scopes pointing to a specific DNS server (e.g. old DNS being decommissioned)
+Get-PSATDhcpScopeInfo -ComputerName 'dhcp01' -DnsServer '10.0.0.1'
+
+# Search across the entire DHCP infrastructure
+$cred = Get-Credential domain\adminuser
+'dhcp01', 'dhcp02' | Get-PSATDhcpScopeInfo -Credential $cred -DnsServer '10.0.0.1', '10.0.0.2'
+
+# Include inactive scopes
+Get-PSATDhcpScopeInfo -ComputerName 'dhcp01' -IncludeInactive
+
+# Query specific scopes only
+Get-PSATDhcpScopeInfo -ComputerName 'dhcp01' -ScopeId '192.168.10.0', '192.168.20.0'
+```
+
+**Requirements:** DhcpServer PowerShell module on the target server (included with the DHCP Server role, or via RSAT). WinRM required for remote access.
+
 ## License
 
 [MIT](LICENSE) - (c) Laurent LIENHARD
