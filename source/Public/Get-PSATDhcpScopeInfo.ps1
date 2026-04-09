@@ -77,14 +77,17 @@ function Get-PSATDhcpScopeInfo {
         $script:dhcpScriptBlock = {
             param ([string[]]$FilterScopeIds, [bool]$IncludeInactive)
 
-            # --- CORRECTIF ERREUR fr-FR / DhcpServerMigration.psd1 ---
-            $modulePath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\Modules\DhcpServer\DhcpServer.psd1"
-            if (Test-Path $modulePath) {
-                Import-Module -Name $modulePath -ErrorAction SilentlyContinue
-            } else {
+            # Force en-US culture to avoid missing fr-FR localization files in DhcpServer module
+            $savedCulture = [System.Threading.Thread]::CurrentThread.CurrentUICulture
+            [System.Threading.Thread]::CurrentThread.CurrentUICulture = [System.Globalization.CultureInfo]::GetCultureInfo('en-US')
+            try
+            {
                 Import-Module -Name DhcpServer -ErrorAction Stop
             }
-            # ---------------------------------------------------------
+            finally
+            {
+                [System.Threading.Thread]::CurrentThread.CurrentUICulture = $savedCulture
+            }
 
             $serverOptions = Get-DhcpServerv4OptionValue -ErrorAction SilentlyContinue
             $serverDns     = ($serverOptions | Where-Object { $_.OptionId -eq 6 }).Value
@@ -154,7 +157,7 @@ function Get-PSATDhcpScopeInfo {
                 }
             }
             catch {
-                Write-Error "Erreur sur '$computer': $($_.Exception.Message)"
+                Write-Error "Failed to query DHCP server '$computer': $($_.Exception.Message)"
             }
         }
     }
