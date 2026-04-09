@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git fetch:*)",
+      "Bash(git stash:*)",
+      "Bash(git pull:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/laurent/Documents/01-DEV/PSAdminTools/output/module/PSAdminTools/0.0.1/en-US"
+    ]
+  }
+}
