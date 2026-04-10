@@ -58,6 +58,83 @@ output/                 # Build artifacts (generated)
 
 ## Available Functions
 
+### Get-PSATComputerInventory
+
+Collects a complete inventory of Windows computers (servers and/or workstations) from Active Directory.
+For each machine the function gathers AD identity data and, when the machine is reachable via WinRM, live CIM/WMI data.
+Offline machines are still returned with AD data intact and `IsOnline` set to `$false`.
+
+Output is strongly typed: `[PSATServer]` for server OS machines and `[PSATWorkstation]` for workstation OS machines.
+Both inherit from `[PSATComputer]`, so you can process them uniformly in a pipeline.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-ComputerName` | string[] | Specific computer(s) to inventory — pipeline-capable. When omitted, AD is queried automatically. |
+| `-ComputerType` | string | Filter by `Server`, `Workstation`, or `All` (default). Applied server-side when querying AD. |
+| `-SearchBase` | string | Scope the AD query to a specific OU (LDAP distinguished name). |
+| `-Credential` | PSCredential | Credentials for WinRM remote connections. AD queries always use the current user context. |
+
+**Output properties — all computers (`PSATComputer`):**
+| Property | Description |
+|----------|-------------|
+| `ComputerName` / `FQDN` | NetBIOS name and fully qualified domain name |
+| `OU` / `ADSite` | Active Directory OU path and replication site |
+| `Description` / `IsEnabled` | AD description and account status |
+| `LastLogonDate` / `ADCreationDate` | Last AD logon and account creation date |
+| `OperatingSystem` / `OSVersion` / `OSBuild` / `Architecture` | OS details |
+| `InstallDate` / `LastBootTime` / `Uptime` | OS install date and last boot information |
+| `IsVirtual` / `Manufacturer` / `Model` | Virtualisation detection and hardware identity |
+| `ProcessorCount` / `CoresPerProcessor` / `TotalRAMGB` | CPU and memory |
+| `IPAddresses` / `DnsServers` / `DefaultGateway` | Network configuration |
+| `Disks` | Array of `[PSATComputerDisk]` — each with `DriveLetter`, `TotalGB`, `FreeGB`, `PercentFree` |
+| `IsOnline` / `PendingReboot` | Connectivity and reboot state |
+| `ComputerType` | `Server` or `Workstation` |
+
+**Additional properties — servers (`PSATServer`):**
+| Property | Description |
+|----------|-------------|
+| `IsDomainController` | `$true` if the machine is a DC |
+| `InstalledRoles` | List of installed Windows Server roles |
+| `LastWindowsUpdate` | Date of the last installed hotfix |
+
+**Additional properties — workstations (`PSATWorkstation`):**
+| Property | Description |
+|----------|-------------|
+| `WorkstationType` | `Laptop`, `Desktop`, or `Virtual` |
+| `CurrentLoggedOnUser` | Currently logged-on user (`DOMAIN\user`) |
+| `LastLoggedOnUser` | Last user who logged on interactively |
+
+**Examples:**
+```powershell
+# Full AD inventory (all Windows computers)
+Get-PSATComputerInventory
+
+# Servers in a specific OU
+Get-PSATComputerInventory -ComputerType Server -SearchBase 'OU=Servers,DC=contoso,DC=com'
+
+# Specific computers with explicit credentials
+$cred = Get-Credential domain\adminuser
+Get-PSATComputerInventory -ComputerName 'SRV01', 'SRV02' -Credential $cred
+
+# Pipeline: workstations only
+'PC01', 'PC02' | Get-PSATComputerInventory -ComputerType Workstation
+
+# Find servers with a pending reboot
+Get-PSATComputerInventory -ComputerType Server | Where-Object { $_.PendingReboot }
+
+# Find servers with less than 15 % disk free
+Get-PSATComputerInventory -ComputerType Server | Where-Object { $_.HasLowDiskSpace(15) }
+
+# Export full inventory to CSV
+Get-PSATComputerInventory | Select-Object ComputerName, FQDN, OperatingSystem, TotalRAMGB, IsOnline, PendingReboot |
+    Export-Csv -Path 'inventory.csv' -NoTypeInformation
+```
+
+**Requirements:** RSAT Active Directory module (`Get-ADComputer`). WinRM must be enabled on remote machines for CIM data collection.
+
+---
+
 ### Set-PSATDnsDebugLogging
 
 Enables or disables DNS Debug Logging on a local or remote DNS server.
