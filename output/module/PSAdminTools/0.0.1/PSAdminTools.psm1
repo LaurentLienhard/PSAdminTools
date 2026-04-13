@@ -82,6 +82,999 @@ class PSATDhcpScope
     #endregion <Methods>
 }
 #EndRegion '.\Classes\01_PSATDhcpScope.ps1' 82
+#Region '.\Classes\02_PSATComputerDisk.ps1' -1
+
+class PSATComputerDisk
+{
+    #region <Properties>
+
+    [string] $DriveLetter
+    [string] $Label
+    [string] $FileSystem
+    [double] $TotalGB
+    [double] $FreeGB
+    [double] $PercentFree
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATComputerDisk(
+        [string] $DriveLetter,
+        [string] $Label,
+        [string] $FileSystem,
+        [double] $TotalGB,
+        [double] $FreeGB
+    )
+    {
+        $this.DriveLetter = $DriveLetter
+        $this.Label       = $Label
+        $this.FileSystem  = $FileSystem
+        $this.TotalGB     = [Math]::Round($TotalGB, 2)
+        $this.FreeGB      = [Math]::Round($FreeGB, 2)
+
+        if ($TotalGB -gt 0)
+        {
+            $this.PercentFree = [Math]::Round(($FreeGB / $TotalGB) * 100, 1)
+        }
+        else
+        {
+            $this.PercentFree = 0
+        }
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if free space is below the given percentage threshold.
+    [bool] IsLowSpace([double] $ThresholdPercent)
+    {
+        return $this.PercentFree -lt $ThresholdPercent
+    }
+
+    # Returns a human-readable summary of the disk.
+    [string] ToString()
+    {
+        return "$($this.DriveLetter) — $($this.FreeGB) GB free / $($this.TotalGB) GB ($($this.PercentFree)% free)"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\02_PSATComputerDisk.ps1' 58
+#Region '.\Classes\03_PSATComputer.ps1' -1
+
+class PSATComputer
+{
+    #region <Properties>
+
+    # Identity / AD
+    [string] $ComputerName
+    [string] $FQDN
+    [string] $OU
+    [string] $ADSite
+    [string] $Description
+    [bool]   $IsEnabled
+    [object] $LastLogonDate
+    [object] $ADCreationDate
+
+    # Operating System
+    [string] $OperatingSystem
+    [string] $OSVersion
+    [string] $OSBuild
+    [string] $Architecture
+    [object] $InstallDate
+    [object] $LastBootTime
+    [object] $Uptime
+
+    # Hardware
+    [bool]   $IsVirtual
+    [string] $Manufacturer
+    [string] $Model
+    [int]    $ProcessorCount
+    [int]    $CoresPerProcessor
+    [double] $TotalRAMGB
+
+    # Network
+    [string[]] $IPAddresses
+    [string[]] $DnsServers
+    [string]   $DefaultGateway
+
+    # Storage
+    [PSATComputerDisk[]] $Disks
+
+    # Health
+    [bool]   $IsOnline
+    [bool]   $PendingReboot
+
+    # Classification
+    [string] $ComputerType
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATComputer([PSCustomObject] $raw)
+    {
+        $this.ComputerName    = $raw.ComputerName
+        $this.FQDN            = $raw.FQDN
+        $this.OU              = $raw.OU
+        $this.ADSite          = $raw.ADSite
+        $this.Description     = $raw.Description
+        $this.IsEnabled       = $raw.IsEnabled
+        $this.LastLogonDate   = $raw.LastLogonDate
+        $this.ADCreationDate  = $raw.ADCreationDate
+
+        $this.OperatingSystem = $raw.OperatingSystem
+        $this.OSVersion       = $raw.OSVersion
+        $this.OSBuild         = $raw.OSBuild
+        $this.Architecture    = $raw.Architecture
+        $this.InstallDate     = $raw.InstallDate
+        $this.LastBootTime    = $raw.LastBootTime
+        $this.Uptime          = $raw.Uptime
+
+        $this.IsVirtual          = $raw.IsVirtual
+        $this.Manufacturer       = $raw.Manufacturer
+        $this.Model              = $raw.Model
+        $this.ProcessorCount     = $raw.ProcessorCount
+        $this.CoresPerProcessor  = $raw.CoresPerProcessor
+        $this.TotalRAMGB         = $raw.TotalRAMGB
+
+        $this.IPAddresses    = $raw.IPAddresses
+        $this.DnsServers     = $raw.DnsServers
+        $this.DefaultGateway = $raw.DefaultGateway
+
+        $this.Disks = $raw.Disks
+
+        $this.IsOnline      = $raw.IsOnline
+        $this.PendingReboot = $raw.PendingReboot
+        $this.ComputerType  = $raw.ComputerType
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if any disk is below the given free-space percentage threshold.
+    [bool] HasLowDiskSpace([double] $ThresholdPercent)
+    {
+        foreach ($disk in $this.Disks)
+        {
+            if ($disk.IsLowSpace($ThresholdPercent))
+            {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    # Returns a human-readable summary of the computer.
+    [string] ToString()
+    {
+        return "[$($this.ComputerType)] $($this.ComputerName) — OS: $($this.OperatingSystem) — Online: $($this.IsOnline)"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\03_PSATComputer.ps1' 113
+#Region '.\Classes\04_PSATServer.ps1' -1
+
+class PSATServer : PSATComputer
+{
+    #region <Properties>
+
+    [bool]     $IsDomainController
+    [string[]] $InstalledRoles
+    [object]   $LastWindowsUpdate
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATServer([PSCustomObject] $raw) : base($raw)
+    {
+        $this.IsDomainController = $raw.IsDomainController
+        $this.InstalledRoles     = $raw.InstalledRoles
+        $this.LastWindowsUpdate  = $raw.LastWindowsUpdate
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if the specified Windows role is installed.
+    [bool] HasRole([string] $RoleName)
+    {
+        return $RoleName -in $this.InstalledRoles
+    }
+
+    # Returns a human-readable summary of the server.
+    [string] ToString()
+    {
+        $dcLabel = if ($this.IsDomainController) { 'DC' } else { 'MemberServer' }
+        return "[$dcLabel] $($this.ComputerName) — OS: $($this.OperatingSystem) — Online: $($this.IsOnline) — Roles: $($this.InstalledRoles.Count)"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\04_PSATServer.ps1' 39
+#Region '.\Classes\05_PSATWorkstation.ps1' -1
+
+class PSATWorkstation : PSATComputer
+{
+    #region <Properties>
+
+    [string] $WorkstationType
+    [string] $CurrentLoggedOnUser
+    [string] $LastLoggedOnUser
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATWorkstation([PSCustomObject] $raw) : base($raw)
+    {
+        $this.WorkstationType     = $raw.WorkstationType
+        $this.CurrentLoggedOnUser = $raw.CurrentLoggedOnUser
+        $this.LastLoggedOnUser    = $raw.LastLoggedOnUser
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if a user is currently logged on interactively.
+    [bool] HasActiveUser()
+    {
+        return -not [string]::IsNullOrEmpty($this.CurrentLoggedOnUser)
+    }
+
+    # Returns a human-readable summary of the workstation.
+    [string] ToString()
+    {
+        return "[$($this.WorkstationType)] $($this.ComputerName) — OS: $($this.OperatingSystem) — Online: $($this.IsOnline) — User: $($this.CurrentLoggedOnUser)"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\05_PSATWorkstation.ps1' 38
+#Region '.\Public\Get-PSATADNTPConfiguration.ps1' -1
+
+function Get-PSATADNTPConfiguration
+{
+    <#
+    .SYNOPSIS
+        Retrieves NTP configuration for specified computers or all Domain Controllers.
+    .DESCRIPTION
+        Queries the w32time service and registry. If no computers are specified,
+        it automatically targets all Domain Controllers in the domain using the PDC Emulator.
+    .PARAMETER ComputerName
+        A list of computer names or FQDNs to query.
+    .PARAMETER ADServer
+        The DC used to discover the list of DCs (if ComputerName is empty). Defaults to the PDC Emulator.
+    .PARAMETER Credential
+        Optional credentials for remote access.
+    .EXAMPLE
+        Get-PSATADDomainNTPConfiguration -Verbose | Format-Table -AutoSize
+    .EXAMPLE
+        Get-PSATADDomainNTPConfiguration -ComputerName "MemberSrv01", "MemberSrv02" -Credential (Get-Credential)
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        [string[]]$ComputerName,
+        [Parameter()]
+        [string]$ADServer = $((Get-ADDomain).PDCEmulator),
+        [Parameter()]
+        [System.Management.Automation.PSCredential]$Credential = [System.Management.Automation.PSCredential]::Empty
+    )
+
+    process
+    {
+        try
+        {
+            $TargetList = @()
+
+            if ($PSBoundParameters.ContainsKey('ComputerName'))
+            {
+                $TargetList = $ComputerName
+                Write-Verbose "Targeting specific computers: $($TargetList -join ', ')"
+            }
+            else
+            {
+                Write-Verbose "No computers specified. Fetching all DCs from PDC: $ADServer"
+                $splatAD = @{
+                    Filter = '*'
+                    Server = $ADServer
+                }
+                if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
+                {
+                    $splatAD.Add("Credential", $Credential)
+                }
+                $TargetList = Get-ADDomainController @splatAD | Select-Object -ExpandProperty HostName
+            }
+
+            if (-not $TargetList)
+            {
+                throw "Target list is empty."
+            }
+
+            Write-Verbose "Querying NTP configuration on $($TargetList.Count) targets..."
+
+            $invokeParams = @{
+                ComputerName = $TargetList
+                ErrorAction  = 'SilentlyContinue'
+                ScriptBlock  = {
+                    try
+                    {
+                        $reg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop
+                        $status = w32tm /query /status
+
+                        $sourceMatch = $status | Select-String "Source:"
+                        $source = if ($sourceMatch)
+                        {
+                            $sourceMatch.ToString().Split(":")[1].Trim()
+                        }
+                        else
+                        {
+                            "N/A"
+                        }
+
+                        $isDC = if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\ProductOptions" -ErrorAction SilentlyContinue | Select-String "LanmanNT|ServerNT")
+                        {
+                            $true
+                        }
+                        else
+                        {
+                            $false
+                        }
+
+                        return [PSCustomObject]@{
+                            ComputerName = $env:COMPUTERNAME
+                            NTPSource    = $source
+                            ConfigType   = $reg.Type
+                            Service      = (Get-Service w32time).Status
+                            IsDC         = $isDC
+                        }
+                    }
+                    catch
+                    {
+                        return [PSCustomObject]@{
+                            ComputerName = $env:COMPUTERNAME
+                            NTPSource    = "Error/Unreachable"
+                            ConfigType   = "N/A"
+                            Service      = "N/A"
+                            IsDC         = "Unknown"
+                        }
+                    }
+                }
+            }
+
+            if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
+            {
+                $invokeParams.Add("Credential", $Credential)
+            }
+
+            $Results = Invoke-Command @invokeParams
+
+            if ($Results)
+            {
+                return $Results | Select-Object ComputerName, NTPSource, ConfigType, Service, IsDC | Sort-Object ComputerName
+            }
+            else
+            {
+                Write-Verbose "No results returned. Ensure WinRM is enabled on targets."
+            }
+        }
+        catch
+        {
+            Write-Error "Critical Error: $($_.Exception.Message)"
+        }
+    }
+}
+#EndRegion '.\Public\Get-PSATADNTPConfiguration.ps1' 133
+#Region '.\Public\Get-PSATADNtpDrift.ps1' -1
+
+function Get-PSATADNtpDrift
+{
+    <#
+    .SYNOPSIS
+        Returns NTP time drift data in milliseconds compared to the PDC Emulator.
+    .DESCRIPTION
+        Outputs a PSCustomObject for each target containing drift values and status levels.
+    .PARAMETER ComputerName
+        List of computers to check. If empty, all DCs are targeted.
+    .PARAMETER Credential
+        Optional credentials for remote AD discovery.
+    .EXAMPLE
+        Get-PSATADNtpDrift | Out-GridView
+    .EXAMPLE
+        Get-PSATADNtpDrift -ComputerName "SRV01" | Export-Csv -Path "DriftReport.csv"
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter()]
+        [string[]]$ComputerName,
+        [Parameter()]
+        [System.Management.Automation.PSCredential]$Credential = [System.Management.Automation.PSCredential]::Empty
+    )
+
+    process
+    {
+        try
+        {
+            $PDC = (Get-ADDomain).PDCEmulator
+
+            $TargetList = @()
+            if ($PSBoundParameters.ContainsKey('ComputerName'))
+            {
+                $TargetList = $ComputerName
+            }
+            else
+            {
+                $splat = @{ Filter = '*'; Server = $PDC }
+                if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
+                {
+                    $splat.Add("Credential", $Credential)
+                }
+                $TargetList = Get-ADDomainController @splat | Select-Object -ExpandProperty HostName
+            }
+
+            # Thresholds (ms)
+            $WarnThresh = 500
+            $ErrThresh = 2000
+
+            $Results = foreach ($Target in $TargetList)
+            {
+                if ($Target -match $PDC.Split('.')[0])
+                {
+                    continue
+                }
+
+                try
+                {
+                    $sample = w32tm /stripchart /computer:$PDC /samples:1 /dataonly | Select-Object -Last 1
+                    if ($sample -match "error")
+                    {
+                        throw "W32Time communication error"
+                    }
+
+                    $rawOffset = ($sample -split ",")[1].Trim().Replace("s", "")
+                    $offsetMs = [math]::Round(([double]$rawOffset * 1000), 2)
+                    $absOffset = [math]::Abs($offsetMs)
+
+                    $status = "OK"
+                    if ($absOffset -gt $ErrThresh)
+                    {
+                        $status = "CRITICAL"
+                    }
+                    elseif ($absOffset -gt $WarnThresh)
+                    {
+                        $status = "WARNING"
+                    }
+
+                    [PSCustomObject]@{
+                        ComputerName = $Target
+                        Reference    = $PDC
+                        DriftMs      = $offsetMs
+                        AbsDriftMs   = $absOffset
+                        Status       = $status
+                        SyncMode     = if ($offsetMs -ge 0)
+                        {
+                            "Ahead"
+                        }
+                        else
+                        {
+                            "Behind"
+                        }
+                        Timestamp    = Get-Date
+                    }
+                }
+                catch
+                {
+                    [PSCustomObject]@{
+                        ComputerName = $Target
+                        Reference    = $PDC
+                        DriftMs      = $null
+                        AbsDriftMs   = $null
+                        Status       = "ERROR"
+                        SyncMode     = "Unreachable"
+                        Timestamp    = Get-Date
+                    }
+                }
+            }
+
+            return $Results
+        }
+        catch
+        {
+            Write-Error "Critical Error: $($_.Exception.Message)"
+        }
+    }
+}
+#EndRegion '.\Public\Get-PSATADNtpDrift.ps1' 118
+#Region '.\Public\Get-PSATComputerInventory.ps1' -1
+
+function Get-PSATComputerInventory
+{
+    <#
+    .SYNOPSIS
+        Collects a complete inventory of Windows computers from Active Directory.
+
+    .DESCRIPTION
+        Get-PSATComputerInventory queries Active Directory to discover computers and then
+        collects detailed information from each machine via CIM/WMI over WinRM.
+
+        When no ComputerName is specified the function queries AD and returns all machines
+        matching the ComputerType filter. When ComputerName is provided the function
+        resolves each name against AD and then connects to it directly.
+
+        If a machine is unreachable the AD identity data is still returned with IsOnline
+        set to $false and all CIM-sourced properties left at their default values.
+
+        Output objects are either [PSATServer] or [PSATWorkstation], both inheriting from
+        [PSATComputer]. You can use standard PowerShell filtering and pipeline processing
+        on the returned collection.
+
+    .PARAMETER ComputerName
+        One or more computer names to inventory. Accepts pipeline input.
+        When omitted the function queries Active Directory for all computers matching
+        the ComputerType filter.
+
+    .PARAMETER ComputerType
+        Filters which computers to include. Accepted values: Server, Workstation, All.
+        Defaults to All.
+        When querying AD without a ComputerName this filter is applied server-side.
+        When ComputerName is provided machines that do not match the filter are skipped.
+
+    .PARAMETER SearchBase
+        Limits the AD query to the specified OU (LDAP distinguished name).
+        Example: 'OU=Servers,DC=contoso,DC=com'
+
+    .PARAMETER Credential
+        Credentials used for remote WinRM connections via Invoke-Command.
+        AD queries always run under the current user context.
+
+    .EXAMPLE
+        Get-PSATComputerInventory
+
+        Returns an inventory of all Windows computers found in Active Directory.
+
+    .EXAMPLE
+        Get-PSATComputerInventory -ComputerType Server -SearchBase 'OU=Servers,DC=contoso,DC=com'
+
+        Returns an inventory of servers found in the specified OU.
+
+    .EXAMPLE
+        Get-PSATComputerInventory -ComputerName 'SRV01', 'SRV02' -Credential (Get-Credential)
+
+        Returns an inventory of two specific servers using explicit credentials.
+
+    .EXAMPLE
+        'PC01', 'PC02' | Get-PSATComputerInventory -ComputerType Workstation
+
+        Pipes computer names and returns only those classified as workstations.
+
+    .EXAMPLE
+        Get-PSATComputerInventory -ComputerType Server | Where-Object { $_.PendingReboot }
+
+        Returns all servers that have a pending reboot.
+
+    .OUTPUTS
+        PSATServer
+        PSATWorkstation
+    #>
+    [CmdletBinding()]
+    [OutputType([PSATComputer])]
+    param (
+        [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $ComputerName,
+
+        [Parameter()]
+        [ValidateSet('Server', 'Workstation', 'All')]
+        [string] $ComputerType = 'All',
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $SearchBase,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential] $Credential
+    )
+
+    BEGIN
+    {
+        Write-Verbose "Starting $($MyInvocation.MyCommand.Name)"
+
+        $script:cimScriptBlock = {
+            $result = [PSCustomObject]@{
+                OperatingSystem      = ''
+                OSVersion            = ''
+                OSBuild              = ''
+                Architecture         = ''
+                InstallDate          = $null
+                LastBootTime         = $null
+                Uptime               = $null
+                ProductType          = 0
+                IsDomainController   = $false
+                IsVirtual            = $false
+                Manufacturer         = ''
+                Model                = ''
+                ProcessorCount       = 0
+                CoresPerProcessor    = 0
+                TotalRAMGB           = 0.0
+                IPAddresses          = [string[]]@()
+                DnsServers           = [string[]]@()
+                DefaultGateway       = ''
+                RawDisks             = @()
+                PendingReboot        = $false
+                ADSite               = ''
+                InstalledRoles       = [string[]]@()
+                LastWindowsUpdate    = $null
+                WorkstationType      = ''
+                CurrentLoggedOnUser  = ''
+                LastLoggedOnUser     = ''
+            }
+
+            # Operating system
+            $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+            if ($null -ne $os)
+            {
+                $result.OperatingSystem    = $os.Caption
+                $result.OSVersion          = $os.Version
+                $result.OSBuild            = $os.BuildNumber
+                $result.Architecture       = $os.OSArchitecture
+                $result.InstallDate        = $os.InstallDate
+                $result.LastBootTime       = $os.LastBootUpTime
+                $result.Uptime             = (Get-Date) - $os.LastBootUpTime
+                $result.ProductType        = [int]$os.ProductType
+                $result.IsDomainController = ($os.ProductType -eq 2)
+                $result.TotalRAMGB         = [Math]::Round($os.TotalVisibleMemorySize / 1MB, 2)
+            }
+
+            # Computer system (hardware + user)
+            $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+            if ($null -ne $cs)
+            {
+                $result.Manufacturer   = $cs.Manufacturer
+                $result.Model          = $cs.Model
+                $result.ProcessorCount = [int]$cs.NumberOfProcessors
+
+                $vmKeywords = @('Virtual', 'VMware', 'VirtualBox', 'HVM domU', 'KVM', 'Hyper-V')
+                $result.IsVirtual = ($vmKeywords | Where-Object { $cs.Model -match $_ }).Count -gt 0
+
+                if (-not [string]::IsNullOrEmpty($cs.UserName))
+                {
+                    $result.CurrentLoggedOnUser = $cs.UserName
+                }
+            }
+
+            # Processor cores
+            $proc = Get-CimInstance -ClassName Win32_Processor -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+            if ($null -ne $proc)
+            {
+                $result.CoresPerProcessor = [int]$proc.NumberOfCores
+            }
+
+            # Workstation chassis type
+            if ($result.ProductType -eq 1)
+            {
+                $enclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -ErrorAction SilentlyContinue
+                if ($null -ne $enclosure)
+                {
+                    $laptopTypes = @(8, 9, 10, 11, 12, 14)
+                    $chassisTypes = @($enclosure.ChassisTypes)
+                    if (($chassisTypes | Where-Object { $_ -in $laptopTypes }).Count -gt 0)
+                    {
+                        $result.WorkstationType = 'Laptop'
+                    }
+                    elseif ($result.IsVirtual)
+                    {
+                        $result.WorkstationType = 'Virtual'
+                    }
+                    else
+                    {
+                        $result.WorkstationType = 'Desktop'
+                    }
+                }
+
+                # Last logged on user from registry
+                try
+                {
+                    $logonKey = Get-ItemProperty `
+                        -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI' `
+                        -Name 'LastLoggedOnUser' `
+                        -ErrorAction Stop
+                    $result.LastLoggedOnUser = $logonKey.LastLoggedOnUser
+                }
+                catch
+                {
+                    $result.LastLoggedOnUser = ''
+                }
+            }
+
+            # Logical disks (local fixed drives only)
+            $disks = Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType = 3' -ErrorAction SilentlyContinue
+            $result.RawDisks = @(
+                foreach ($disk in $disks)
+                {
+                    [PSCustomObject]@{
+                        DriveLetter = [string]$disk.DeviceID
+                        Label       = [string]$disk.VolumeName
+                        FileSystem  = [string]$disk.FileSystem
+                        TotalGB     = [Math]::Round($disk.Size / 1GB, 2)
+                        FreeGB      = [Math]::Round($disk.FreeSpace / 1GB, 2)
+                    }
+                }
+            )
+
+            # Network adapters (IP-enabled only, IPv4 only)
+            $adapters = Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled = True' `
+                -ErrorAction SilentlyContinue
+            $ipList  = [System.Collections.Generic.List[string]]::new()
+            $dnsList = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($adapter in $adapters)
+            {
+                foreach ($ip in $adapter.IPAddress)
+                {
+                    if ($ip -notmatch ':')
+                    {
+                        $ipList.Add($ip)
+                    }
+                }
+                foreach ($dns in $adapter.DNSServerSearchOrder)
+                {
+                    if (-not $dnsList.Contains($dns))
+                    {
+                        $dnsList.Add($dns)
+                    }
+                }
+                if ($null -ne $adapter.DefaultIPGateway -and $adapter.DefaultIPGateway.Count -gt 0)
+                {
+                    $result.DefaultGateway = $adapter.DefaultIPGateway[0]
+                }
+            }
+
+            $result.IPAddresses = $ipList.ToArray()
+            $result.DnsServers  = $dnsList.ToArray()
+
+            # Pending reboot detection via registry keys
+            $rebootKeys = @(
+                'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
+                'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired',
+                'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\PendingFileRenameOperations'
+            )
+            foreach ($key in $rebootKeys)
+            {
+                if (Test-Path -Path $key)
+                {
+                    $result.PendingReboot = $true
+                    break
+                }
+            }
+
+            # AD site of the remote machine
+            try
+            {
+                $result.ADSite = [System.DirectoryServices.ActiveDirectory.ActiveDirectorySite]::GetComputerSite().Name
+            }
+            catch
+            {
+                $result.ADSite = ''
+            }
+
+            # Server roles (ProductType 2 = DC, 3 = member server)
+            if ($result.ProductType -ge 2)
+            {
+                try
+                {
+                    $roles = Get-WindowsFeature -ErrorAction Stop |
+                        Where-Object { $_.Installed -and $_.FeatureType -eq 'Role' }
+                    $result.InstalledRoles = [string[]]@($roles | Select-Object -ExpandProperty Name)
+                }
+                catch
+                {
+                    $result.InstalledRoles = [string[]]@()
+                }
+
+                try
+                {
+                    $lastHotfix = Get-HotFix -ErrorAction SilentlyContinue |
+                        Sort-Object -Property InstalledOn -Descending |
+                        Select-Object -First 1
+                    if ($null -ne $lastHotfix)
+                    {
+                        $result.LastWindowsUpdate = $lastHotfix.InstalledOn
+                    }
+                }
+                catch
+                {
+                    $result.LastWindowsUpdate = $null
+                }
+            }
+
+            $result
+        }
+    }
+
+    PROCESS
+    {
+        $adComputers = [System.Collections.Generic.List[object]]::new()
+
+        if ($PSBoundParameters.ContainsKey('ComputerName'))
+        {
+            foreach ($name in $ComputerName)
+            {
+                try
+                {
+                    $adParams = @{
+                        Identity    = $name
+                        Properties  = @('DistinguishedName', 'DNSHostName', 'Description', 'Enabled',
+                                        'LastLogonDate', 'Created', 'OperatingSystem')
+                        ErrorAction = 'Stop'
+                    }
+                    $adComputers.Add((Get-ADComputer @adParams))
+                }
+                catch
+                {
+                    Write-Warning "Computer '$name' not found in Active Directory: $($_.Exception.Message)"
+                }
+            }
+        }
+        else
+        {
+            $adFilter = switch ($ComputerType)
+            {
+                'Server'      { "OperatingSystem -like '*Server*'" }
+                'Workstation' { "OperatingSystem -notlike '*Server*' -and OperatingSystem -like '*Windows*'" }
+                default       { "OperatingSystem -like '*Windows*'" }
+            }
+
+            $adParams = @{
+                Filter      = $adFilter
+                Properties  = @('DistinguishedName', 'DNSHostName', 'Description', 'Enabled',
+                                'LastLogonDate', 'Created', 'OperatingSystem')
+                ErrorAction = 'Stop'
+            }
+
+            if ($PSBoundParameters.ContainsKey('SearchBase'))
+            {
+                $adParams['SearchBase'] = $SearchBase
+            }
+
+            try
+            {
+                $adComputers.AddRange([object[]]@(Get-ADComputer @adParams))
+            }
+            catch
+            {
+                Write-Error "Failed to query Active Directory: $($_.Exception.Message)"
+                return
+            }
+        }
+
+        foreach ($adComputer in $adComputers)
+        {
+            $name = $adComputer.Name
+            Write-Verbose "Processing '$name'"
+
+            # Detect type from AD OS attribute
+            $type = if ($adComputer.OperatingSystem -like '*Server*') { 'Server' } else { 'Workstation' }
+
+            # Skip when ComputerName was specified and type does not match the filter
+            if ($ComputerType -ne 'All' -and $type -ne $ComputerType)
+            {
+                Write-Verbose "Skipping '$name' — type '$type' does not match filter '$ComputerType'"
+                continue
+            }
+
+            # Extract OU path from DistinguishedName
+            $ou = $adComputer.DistinguishedName -replace '^CN=[^,]+,', ''
+
+            # Connectivity check
+            $isOnline = Test-Connection -ComputerName $name -Count 1 -Quiet -ErrorAction SilentlyContinue
+
+            # CIM data collection (only when reachable)
+            $rawCim = $null
+            if ($isOnline)
+            {
+                try
+                {
+                    $invokeParams = @{
+                        ComputerName = $name
+                        ScriptBlock  = $script:cimScriptBlock
+                        ErrorAction  = 'Stop'
+                    }
+                    if ($PSBoundParameters.ContainsKey('Credential'))
+                    {
+                        $invokeParams['Credential'] = $Credential
+                    }
+                    $rawCim = Invoke-Command @invokeParams
+                }
+                catch
+                {
+                    Write-Warning "Failed to collect CIM data from '$name': $($_.Exception.Message)"
+                }
+            }
+            else
+            {
+                Write-Verbose "'$name' is offline — only AD data will be available"
+            }
+
+            # Build disk objects from raw CIM data
+            $disks = [System.Collections.Generic.List[PSATComputerDisk]]::new()
+            if ($null -ne $rawCim -and $null -ne $rawCim.RawDisks)
+            {
+                foreach ($d in $rawCim.RawDisks)
+                {
+                    $disks.Add([PSATComputerDisk]::new(
+                        [string]$d.DriveLetter,
+                        [string]$d.Label,
+                        [string]$d.FileSystem,
+                        [double]$d.TotalGB,
+                        [double]$d.FreeGB
+                    ))
+                }
+            }
+
+            # Merge AD and CIM data into a single object for the class constructor
+            $raw = [PSCustomObject]@{
+                ComputerName      = $name
+                FQDN              = [string]$adComputer.DNSHostName
+                OU                = $ou
+                ADSite            = if ($null -ne $rawCim) { [string]$rawCim.ADSite } else { '' }
+                Description       = [string]$adComputer.Description
+                IsEnabled         = [bool]$adComputer.Enabled
+                LastLogonDate     = $adComputer.LastLogonDate
+                ADCreationDate    = $adComputer.Created
+                OperatingSystem   = if ($null -ne $rawCim) { [string]$rawCim.OperatingSystem } else { [string]$adComputer.OperatingSystem }
+                OSVersion         = if ($null -ne $rawCim) { [string]$rawCim.OSVersion } else { '' }
+                OSBuild           = if ($null -ne $rawCim) { [string]$rawCim.OSBuild } else { '' }
+                Architecture      = if ($null -ne $rawCim) { [string]$rawCim.Architecture } else { '' }
+                InstallDate       = if ($null -ne $rawCim) { $rawCim.InstallDate } else { $null }
+                LastBootTime      = if ($null -ne $rawCim) { $rawCim.LastBootTime } else { $null }
+                Uptime            = if ($null -ne $rawCim) { $rawCim.Uptime } else { $null }
+                IsVirtual         = if ($null -ne $rawCim) { [bool]$rawCim.IsVirtual } else { $false }
+                Manufacturer      = if ($null -ne $rawCim) { [string]$rawCim.Manufacturer } else { '' }
+                Model             = if ($null -ne $rawCim) { [string]$rawCim.Model } else { '' }
+                ProcessorCount    = if ($null -ne $rawCim) { [int]$rawCim.ProcessorCount } else { 0 }
+                CoresPerProcessor = if ($null -ne $rawCim) { [int]$rawCim.CoresPerProcessor } else { 0 }
+                TotalRAMGB        = if ($null -ne $rawCim) { [double]$rawCim.TotalRAMGB } else { 0.0 }
+                IPAddresses       = if ($null -ne $rawCim -and $null -ne $rawCim.IPAddresses) { [string[]]$rawCim.IPAddresses } else { [string[]]@() }
+                DnsServers        = if ($null -ne $rawCim -and $null -ne $rawCim.DnsServers) { [string[]]$rawCim.DnsServers } else { [string[]]@() }
+                DefaultGateway    = if ($null -ne $rawCim) { [string]$rawCim.DefaultGateway } else { '' }
+                Disks             = $disks.ToArray()
+                IsOnline          = $isOnline
+                PendingReboot     = if ($null -ne $rawCim) { [bool]$rawCim.PendingReboot } else { $false }
+                ComputerType      = $type
+                IsDomainController = if ($null -ne $rawCim) { [bool]$rawCim.IsDomainController } else { $false }
+                InstalledRoles    = if ($null -ne $rawCim -and $null -ne $rawCim.InstalledRoles) { [string[]]$rawCim.InstalledRoles } else { [string[]]@() }
+                LastWindowsUpdate = if ($null -ne $rawCim) { $rawCim.LastWindowsUpdate } else { $null }
+                WorkstationType      = if ($null -ne $rawCim) { [string]$rawCim.WorkstationType } else { '' }
+                CurrentLoggedOnUser  = if ($null -ne $rawCim) { [string]$rawCim.CurrentLoggedOnUser } else { '' }
+                LastLoggedOnUser     = if ($null -ne $rawCim) { [string]$rawCim.LastLoggedOnUser } else { '' }
+            }
+
+            if ($type -eq 'Server')
+            {
+                [PSATServer]::new($raw)
+            }
+            else
+            {
+                [PSATWorkstation]::new($raw)
+            }
+        }
+    }
+
+    END
+    {
+        Write-Verbose "Ending $($MyInvocation.MyCommand.Name)"
+    }
+}
+#EndRegion '.\Public\Get-PSATComputerInventory.ps1' 480
 #Region '.\Public\Get-PSATDhcpScopeInfo.ps1' -1
 
 function Get-PSATDhcpScopeInfo {
@@ -143,6 +1136,15 @@ function Get-PSATDhcpScopeInfo {
                 $sRouter = ($scopeOptions | Where-Object { $_.OptionId -eq 3 }).Value
                 $sDomain = ($scopeOptions | Where-Object { $_.OptionId -eq 15 }).Value
 
+                if ($null -ne $sDns) { $resolvedDns = [string[]]$sDns; $dnsSource = 'Scope' }
+                else { $resolvedDns = [string[]]$serverDns; $dnsSource = 'Server' }
+
+                if ($null -ne $sDomain) { $resolvedDomain = [string]($sDomain | Select-Object -First 1) }
+                else { $resolvedDomain = [string]($serverDomain | Select-Object -First 1) }
+
+                if ($null -ne $sRouter) { $resolvedRouter = [string[]]$sRouter }
+                else { $resolvedRouter = [string[]]$serverRouter }
+
                 [PSCustomObject]@{
                     ScopeId          = $scope.ScopeId.IPAddressToString
                     Name             = $scope.Name
@@ -151,10 +1153,10 @@ function Get-PSATDhcpScopeInfo {
                     StartRange       = $scope.StartRange.IPAddressToString
                     EndRange         = $scope.EndRange.IPAddressToString
                     LeaseDuration    = $scope.LeaseDuration
-                    DnsServers       = if ($null -ne $sDns) { [string[]]$sDns } else { [string[]]$serverDns }
-                    DnsServersSource = if ($null -ne $sDns) { 'Scope' } else { 'Server' }
-                    DomainName       = [string]((if ($null -ne $sDomain) { $sDomain } else { $serverDomain }) | Select-Object -First 1)
-                    Router           = if ($null -ne $sRouter) { [string[]]$sRouter } else { [string[]]$serverRouter }
+                    DnsServers       = $resolvedDns
+                    DnsServersSource = $dnsSource
+                    DomainName       = $resolvedDomain
+                    Router           = $resolvedRouter
                 }
             }
         }
@@ -199,7 +1201,7 @@ function Get-PSATDhcpScopeInfo {
     }
     END { Write-Verbose "Ending Get-PSATDhcpScopeInfo" }
 }
-#EndRegion '.\Public\Get-PSATDhcpScopeInfo.ps1' 116
+#EndRegion '.\Public\Get-PSATDhcpScopeInfo.ps1' 125
 #Region '.\Public\Get-PSATDnsDebugLog.ps1' -1
 
 function Get-PSATDnsDebugLog
