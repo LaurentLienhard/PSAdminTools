@@ -20,6 +20,9 @@ When developing this module, follow standard PowerShell module structure:
 
 ## Git Workflow
 
+- **Every new feature MUST be developed on a dedicated git branch** — never commit new features directly to `main`
+  - Branch naming convention: `feature/<short-description>` (e.g., `feature/get-psat-dhcp-scope`)
+  - Merge to `main` via pull request only
 - **README.md must be updated before every `git commit` and `git push`** to reflect changes (new functions, API changes, new dependencies, etc.)
 - **Commit messages must be concise but exhaustive enough** to clearly understand what was changed and why
 
@@ -115,13 +118,41 @@ function Get-Example
 - Use `try/catch` blocks with specific exception types when possible
 - Use `[SuppressMessageAttribute()]` to bypass PSScriptAnalyzer rules only when justified
 
+### Remote Execution - REQUIRED
+
+**All functions MUST support both local and remote execution.**
+
+- Every public function MUST accept `ComputerName` and `Credential` parameters
+- When `ComputerName` is not specified, the function runs locally (targeting `localhost` / current machine)
+- When `ComputerName` is specified, the function executes remotely via `Invoke-Command` using the provided credentials
+- This allows the module to be used both directly on a server AND from an admin workstation
+
+**Standard parameter block for remote support:**
+```powershell
+[Parameter()]
+[string[]]$ComputerName = $env:COMPUTERNAME,
+
+[Parameter()]
+[System.Management.Automation.PSCredential]$Credential
+```
+
+**Remote execution pattern:**
+```powershell
+$invokeParams = @{
+    ComputerName = $ComputerName
+    ScriptBlock  = { <# logic here #> }
+    ErrorAction  = 'Stop'
+}
+if ($PSBoundParameters.ContainsKey('Credential'))
+{
+    $invokeParams['Credential'] = $Credential
+}
+Invoke-Command @invokeParams
+```
+
 ### Parameter Patterns
-- Credential parameter pattern (optional credentials):
-  ```powershell
-  [Parameter()]
-  [System.Management.Automation.PSCredential]$Credential
-  ```
 - Check for credential with `$PSBoundParameters.ContainsKey('Credential')`
+- Check for explicit ComputerName with `$PSBoundParameters.ContainsKey('ComputerName')` when local/remote behavior differs
 
 ### Error Handling - REQUIRED
 
@@ -143,9 +174,13 @@ Write-Error "Failed to process '$Name' in domain '$($env:USERDOMAIN)': $($_.Exce
 - Prefix class files with numbers for load order (e.g., `01_Server.ps1`, `02_Service.ps1`)
 - Use `HIDDEN` keyword for internal properties (e.g., credentials)
 
-### Object-Oriented Design Philosophy
+### Object-Oriented Design Philosophy - MANDATORY
 
-**Prefer classes over functions whenever possible.** Use classes for entities with multiple related properties or state. Functions are acceptable for simple stateless utilities, formatters, validators, or orchestration.
+**Using classes is MANDATORY.** Every feature, entity, or data structure MUST be implemented as a PowerShell class. Functions wrapping classes are acceptable for public module surface (cmdlets), but the underlying logic MUST live in a class.
+
+- Classes handle all state, business logic, and data modeling
+- Public functions (`<Verb>-PSAT<Noun>`) act as thin wrappers that instantiate and call class methods
+- Functions are only acceptable for pure stateless utilities (formatters, validators) with no associated state
 
 ### PowerShell Compatibility
 

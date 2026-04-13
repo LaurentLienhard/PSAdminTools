@@ -135,6 +135,62 @@ Get-PSATComputerInventory | Select-Object ComputerName, FQDN, OperatingSystem, T
 
 ---
 
+### Test-PSATNtpHealth
+
+Checks the NTP health of computers by analysing their W32Time event log entries remotely.
+Each machine's System event log is queried for events from the `Microsoft-Windows-Time-Service` provider within a configurable lookback window.
+
+Events are classified by their native Windows log level:
+- **Error / Critical** — synchronisation failures, no accessible time source (e.g. IDs 29, 129)
+- **Warning** — temporary sync gaps, unreachable peers (e.g. IDs 36, 38, 47)
+- **Information** — successful sync, valid data received (e.g. IDs 35, 37)
+
+A machine is considered **healthy** when no Error or Critical events appear in the lookback window.
+When no `ComputerName` is provided all Domain Controllers are discovered automatically.
+
+**Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `-ComputerName` | string[] | Computer(s) to check — pipeline-capable. When omitted all DCs are targeted. |
+| `-Hours` | int | Lookback window in hours (default: 24, max: 8760). |
+| `-ADServer` | string | DC used to discover the list of DCs. Defaults to the PDC Emulator. |
+| `-Credential` | PSCredential | Credentials for remote WinRM connections. |
+
+**Output properties (`PSATNtpHealthCheck`):**
+| Property | Description |
+|----------|-------------|
+| `ComputerName` | Target machine name |
+| `IsHealthy` | `$true` if no Error/Critical events found in the lookback window |
+| `Events` | Array of `[PSATNtpHealthEvent]` — each with `EventId`, `Level`, `Message`, `TimeCreated` |
+| `LastSyncTime` | Timestamp of the last successful synchronisation event (ID 35/37) |
+| `LastSyncSource` | NTP source extracted from the last sync event |
+| `CheckedAt` | Timestamp of the check |
+
+**Methods on `PSATNtpHealthCheck`:** `HasErrors()`, `HasWarnings()`, `GetErrors()`, `GetWarnings()`
+
+**Examples:**
+```powershell
+# Check all DCs — last 24 hours
+Test-PSATNtpHealth | Format-Table -AutoSize
+
+# 48-hour lookback on specific servers
+Test-PSATNtpHealth -ComputerName 'SRV01', 'SRV02' -Hours 48
+
+# Only unhealthy machines
+Test-PSATNtpHealth | Where-Object { -not $_.IsHealthy }
+
+# List all warning events from machines that have them
+Test-PSATNtpHealth | Where-Object { $_.HasWarnings() } | ForEach-Object { $_.GetWarnings() }
+
+# Export health report to CSV
+Test-PSATNtpHealth | Select-Object ComputerName, IsHealthy, LastSyncTime, LastSyncSource |
+    Export-Csv -Path 'ntp-health.csv' -NoTypeInformation
+```
+
+**Requirements:** WinRM must be enabled on remote machines. RSAT Active Directory module required when no `ComputerName` is specified.
+
+---
+
 ### Set-PSATDnsDebugLogging
 
 Enables or disables DNS Debug Logging on a local or remote DNS server.

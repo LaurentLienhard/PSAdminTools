@@ -2,131 +2,207 @@ function Get-PSATADNTPConfiguration
 {
     <#
     .SYNOPSIS
-        Retrieves NTP configuration for specified computers or all Domain Controllers.
+        Retrieves the NTP configuration from one or more computers.
+
     .DESCRIPTION
-        Queries the w32time service and registry. If no computers are specified,
-        it automatically targets all Domain Controllers in the domain using the PDC Emulator.
+        Queries the W32Time service and registry on each target machine via WinRM.
+        When no ComputerName is specified the function automatically discovers all
+        Domain Controllers in the domain using the PDC Emulator (or the server
+        specified by -ADServer) and targets them.
+
+        Each result is returned as a [PSATNtpConfiguration] object containing the
+        active NTP source, the configured synchronisation type, the W32Time service
+        status, and whether the machine is a Domain Controller.
+
     .PARAMETER ComputerName
-        A list of computer names or FQDNs to query.
+        One or more computer names or FQDNs to query. Accepts pipeline input.
+        When omitted all Domain Controllers discovered via AD are targeted.
+
     .PARAMETER ADServer
-        The DC used to discover the list of DCs (if ComputerName is empty). Defaults to the PDC Emulator.
+        The Domain Controller used to query the list of DCs when ComputerName is
+        not provided. Defaults to the PDC Emulator of the current domain.
+
     .PARAMETER Credential
-        Optional credentials for remote access.
+        Credentials for remote WinRM connections via Invoke-Command.
+
     .EXAMPLE
-        Get-PSATADDomainNTPConfiguration -Verbose | Format-Table -AutoSize
+        Get-PSATADNTPConfiguration | Format-Table -AutoSize
+
+        Queries all Domain Controllers in the current domain and displays results.
+
     .EXAMPLE
-        Get-PSATADDomainNTPConfiguration -ComputerName "MemberSrv01", "MemberSrv02" -Credential (Get-Credential)
+        Get-PSATADNTPConfiguration -ComputerName 'SRV01', 'SRV02'
+
+        Queries two specific servers.
+
+    .EXAMPLE
+        Get-PSATADNTPConfiguration -ComputerName 'SRV01' -Credential (Get-Credential)
+
+        Queries a specific server with explicit credentials.
+
+    .EXAMPLE
+        Get-PSATADNTPConfiguration | Where-Object { -not $_.IsServiceRunning() }
+
+        Returns all machines where W32Time is not running.
+
+    .OUTPUTS
+        PSATNtpConfiguration
     #>
     [CmdletBinding()]
+    [OutputType([PSATNtpConfiguration])]
     param (
+        [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $ComputerName,
+
         [Parameter()]
-        [string[]]$ComputerName,
+        [ValidateNotNullOrEmpty()]
+        [string] $ADServer,
+
         [Parameter()]
-        [string]$ADServer = $((Get-ADDomain).PDCEmulator),
-        [Parameter()]
-        [System.Management.Automation.PSCredential]$Credential = [System.Management.Automation.PSCredential]::Empty
+        [System.Management.Automation.PSCredential] $Credential
     )
 
-    process
+    BEGIN
     {
-        try
-        {
-            $TargetList = @()
+        Write-Verbose "Starting $($MyInvocation.MyCommand.Name)"
 
-            if ($PSBoundParameters.ContainsKey('ComputerName'))
+        if (-not $PSBoundParameters.ContainsKey('ADServer'))
+        {
+            try
             {
-                $TargetList = $ComputerName
-                Write-Verbose "Targeting specific computers: $($TargetList -join ', ')"
+                $ADServer = (Get-ADDomain -ErrorAction Stop).PDCEmulator
+                Write-Verbose "PDC Emulator resolved to '$ADServer'"
             }
-            else
+            catch
             {
-                Write-Verbose "No computers specified. Fetching all DCs from PDC: $ADServer"
-                $splatAD = @{
-                    Filter = '*'
-                    Server = $ADServer
-                }
-                if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
+                Write-Error "Failed to resolve PDC Emulator: $($_.Exception.Message)"
+                return
+            }
+        }
+
+        $script:ntpScriptBlock = {
+            $result = [PSCustomObject]@{
+                ComputerName  = $env:COMPUTERNAME
+                NTPSource     = 'N/A'
+                ConfigType    = 'N/A'
+                ServiceStatus = 'N/A'
+                IsDC          = $false
+            }
+
+            try
+            {
+                $reg = Get-ItemProperty `
+                    -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters' `
+                    -ErrorAction Stop
+                $result.ConfigType = [string]$reg.Type
+
+                $w32Status = w32tm /query /status 2>&1
+                $sourceMatch = $w32Status | Select-String -Pattern 'Source:\s*(.+)'
+                if ($null -ne $sourceMatch)
                 {
-                    $splatAD.Add("Credential", $Credential)
+                    $result.NTPSource = $sourceMatch.Matches[0].Groups[1].Value.Trim()
                 }
-                $TargetList = Get-ADDomainController @splatAD | Select-Object -ExpandProperty HostName
-            }
 
-            if (-not $TargetList)
+                $svc = Get-Service -Name 'w32time' -ErrorAction Stop
+                $result.ServiceStatus = $svc.Status.ToString()
+
+                $productType = (Get-ItemProperty `
+                    -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions' `
+                    -ErrorAction SilentlyContinue).ProductType
+                $result.IsDC = $productType -eq 'LanmanNT'
+            }
+            catch
             {
-                throw "Target list is empty."
+                $result.NTPSource     = 'Error'
+                $result.ConfigType    = 'Error'
+                $result.ServiceStatus = 'Error'
             }
 
-            Write-Verbose "Querying NTP configuration on $($TargetList.Count) targets..."
-
-            $invokeParams = @{
-                ComputerName = $TargetList
-                ErrorAction  = 'SilentlyContinue'
-                ScriptBlock  = {
-                    try
-                    {
-                        $reg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop
-                        $status = w32tm /query /status
-
-                        $sourceMatch = $status | Select-String "Source:"
-                        $source = if ($sourceMatch)
-                        {
-                            $sourceMatch.ToString().Split(":")[1].Trim()
-                        }
-                        else
-                        {
-                            "N/A"
-                        }
-
-                        $isDC = if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\ProductOptions" -ErrorAction SilentlyContinue | Select-String "LanmanNT|ServerNT")
-                        {
-                            $true
-                        }
-                        else
-                        {
-                            $false
-                        }
-
-                        return [PSCustomObject]@{
-                            ComputerName = $env:COMPUTERNAME
-                            NTPSource    = $source
-                            ConfigType   = $reg.Type
-                            Service      = (Get-Service w32time).Status
-                            IsDC         = $isDC
-                        }
-                    }
-                    catch
-                    {
-                        return [PSCustomObject]@{
-                            ComputerName = $env:COMPUTERNAME
-                            NTPSource    = "Error/Unreachable"
-                            ConfigType   = "N/A"
-                            Service      = "N/A"
-                            IsDC         = "Unknown"
-                        }
-                    }
-                }
-            }
-
-            if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
-            {
-                $invokeParams.Add("Credential", $Credential)
-            }
-
-            $Results = Invoke-Command @invokeParams
-
-            if ($Results)
-            {
-                return $Results | Select-Object ComputerName, NTPSource, ConfigType, Service, IsDC | Sort-Object ComputerName
-            }
-            else
-            {
-                Write-Verbose "No results returned. Ensure WinRM is enabled on targets."
-            }
+            $result
         }
-        catch
+    }
+
+    PROCESS
+    {
+        $targetList = [System.Collections.Generic.List[string]]::new()
+
+        if ($PSBoundParameters.ContainsKey('ComputerName'))
         {
-            Write-Error "Critical Error: $($_.Exception.Message)"
+            foreach ($name in $ComputerName)
+            {
+                $targetList.Add($name)
+            }
+            Write-Verbose "Targeting $($targetList.Count) specified computer(s)"
         }
+        else
+        {
+            Write-Verbose "Discovering Domain Controllers via '$ADServer'"
+            try
+            {
+                $adParams = @{
+                    Filter      = '*'
+                    Server      = $ADServer
+                    ErrorAction = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $adParams['Credential'] = $Credential
+                }
+                $dcs = Get-ADDomainController @adParams |
+                    Select-Object -ExpandProperty HostName
+                foreach ($dc in $dcs)
+                {
+                    $targetList.Add($dc)
+                }
+                Write-Verbose "Found $($targetList.Count) Domain Controller(s)"
+            }
+            catch
+            {
+                Write-Error "Failed to retrieve Domain Controllers from '$ADServer': $($_.Exception.Message)"
+                return
+            }
+        }
+
+        if ($targetList.Count -eq 0)
+        {
+            Write-Error "Target list is empty — no computers to query."
+            return
+        }
+
+        foreach ($target in $targetList)
+        {
+            Write-Verbose "Querying NTP configuration on '$target'"
+            try
+            {
+                $invokeParams = @{
+                    ComputerName = $target
+                    ScriptBlock  = $script:ntpScriptBlock
+                    ErrorAction  = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $invokeParams['Credential'] = $Credential
+                }
+                $raw = Invoke-Command @invokeParams
+                [PSATNtpConfiguration]::new($raw)
+            }
+            catch
+            {
+                Write-Warning "Failed to query '$target': $($_.Exception.Message)"
+                [PSATNtpConfiguration]::new([PSCustomObject]@{
+                    ComputerName  = $target
+                    NTPSource     = 'Error'
+                    ConfigType    = 'Error'
+                    ServiceStatus = 'Error'
+                    IsDC          = $false
+                })
+            }
+        }
+    }
+
+    END
+    {
+        Write-Verbose "Ending $($MyInvocation.MyCommand.Name)"
     }
 }
