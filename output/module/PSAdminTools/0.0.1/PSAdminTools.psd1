@@ -107,7 +107,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = '## [0.0.1] - 2026-04-13
+        ReleaseNotes = '## [0.0.1] - 2026-08-25
 
 ### Added
 
