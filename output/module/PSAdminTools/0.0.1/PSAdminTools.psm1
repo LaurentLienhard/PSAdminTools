@@ -338,261 +338,754 @@ class PSATWorkstation : PSATComputer
     #endregion <Methods>
 }
 #EndRegion '.\Classes\05_PSATWorkstation.ps1' 38
+#Region '.\Classes\06_PSATNtpConfiguration.ps1' -1
+
+class PSATNtpConfiguration
+{
+    #region <Properties>
+
+    [string] $ComputerName
+    [string] $NTPSource
+    [string] $ConfigType
+    [string] $ServiceStatus
+    [bool]   $IsDC
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATNtpConfiguration([PSCustomObject] $raw)
+    {
+        $this.ComputerName  = $raw.ComputerName
+        $this.NTPSource     = $raw.NTPSource
+        $this.ConfigType    = $raw.ConfigType
+        $this.ServiceStatus = $raw.ServiceStatus
+        $this.IsDC          = $raw.IsDC
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if NTP is actively configured (source is not N/A or Error).
+    [bool] IsConfigured()
+    {
+        $unconfigured = @('N/A', 'Error', '')
+        return $this.NTPSource -notin $unconfigured
+    }
+
+    # Returns $true if the W32Time service is in the Running state.
+    [bool] IsServiceRunning()
+    {
+        return $this.ServiceStatus -eq 'Running'
+    }
+
+    # Returns a human-readable summary of the NTP configuration.
+    [string] ToString()
+    {
+        $dcLabel = if ($this.IsDC) { 'DC' } else { 'Member' }
+        return "[$dcLabel] $($this.ComputerName) — Source: $($this.NTPSource) — Type: $($this.ConfigType) — Service: $($this.ServiceStatus)"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\06_PSATNtpConfiguration.ps1' 50
+#Region '.\Classes\07_PSATNtpDrift.ps1' -1
+
+class PSATNtpDrift
+{
+    #region <Properties>
+
+    [string]   $ComputerName
+    [string]   $Reference
+    [object]   $DriftMs
+    [object]   $AbsDriftMs
+    [string]   $Status
+    [string]   $SyncMode
+    [datetime] $Timestamp
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATNtpDrift([PSCustomObject] $raw)
+    {
+        $this.ComputerName = $raw.ComputerName
+        $this.Reference    = $raw.Reference
+        $this.DriftMs      = $raw.DriftMs
+        $this.AbsDriftMs   = $raw.AbsDriftMs
+        $this.Status       = $raw.Status
+        $this.SyncMode     = $raw.SyncMode
+        $this.Timestamp    = $raw.Timestamp
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if the drift is at WARNING level.
+    [bool] IsWarning()
+    {
+        return $this.Status -eq 'WARNING'
+    }
+
+    # Returns $true if the drift is at CRITICAL level.
+    [bool] IsCritical()
+    {
+        return $this.Status -eq 'CRITICAL'
+    }
+
+    # Returns $true if the target was unreachable or an error occurred.
+    [bool] IsError()
+    {
+        return $this.Status -eq 'ERROR'
+    }
+
+    # Returns a human-readable summary of the drift measurement.
+    [string] ToString()
+    {
+        if ($this.IsError())
+        {
+            return "[$($this.Status)] $($this.ComputerName) vs $($this.Reference) — Unreachable"
+        }
+        return "[$($this.Status)] $($this.ComputerName) vs $($this.Reference) — Drift: $($this.DriftMs) ms ($($this.SyncMode))"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\07_PSATNtpDrift.ps1' 62
+#Region '.\Classes\08_PSATNtpHealthEvent.ps1' -1
+
+class PSATNtpHealthEvent
+{
+    #region <Properties>
+
+    [int]      $EventId
+    [string]   $Level
+    [string]   $Message
+    [datetime] $TimeCreated
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATNtpHealthEvent([PSCustomObject] $raw)
+    {
+        $this.EventId     = $raw.EventId
+        $this.Level       = $raw.Level
+        $this.Message     = $raw.Message
+        $this.TimeCreated = $raw.TimeCreated
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if this event is at Error or Critical level.
+    [bool] IsError()
+    {
+        return $this.Level -in @('Error', 'Critical')
+    }
+
+    # Returns $true if this event is at Warning level.
+    [bool] IsWarning()
+    {
+        return $this.Level -eq 'Warning'
+    }
+
+    # Returns a human-readable summary of the event.
+    [string] ToString()
+    {
+        return "[$($this.Level)] $($this.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss')) — EventId: $($this.EventId) — $($this.Message.Split([System.Environment]::NewLine)[0])"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\08_PSATNtpHealthEvent.ps1' 46
+#Region '.\Classes\09_PSATNtpHealthCheck.ps1' -1
+
+class PSATNtpHealthCheck
+{
+    #region <Properties>
+
+    [string]               $ComputerName
+    [bool]                 $IsHealthy
+    [PSATNtpHealthEvent[]] $Events
+    [object]               $LastSyncTime
+    [string]               $LastSyncSource
+    [datetime]             $CheckedAt
+
+    #endregion <Properties>
+
+    #region <Constructor>
+
+    PSATNtpHealthCheck([PSCustomObject] $raw)
+    {
+        $this.ComputerName    = $raw.ComputerName
+        $this.IsHealthy       = $raw.IsHealthy
+        $this.Events          = $raw.Events
+        $this.LastSyncTime    = $raw.LastSyncTime
+        $this.LastSyncSource  = $raw.LastSyncSource
+        $this.CheckedAt       = $raw.CheckedAt
+    }
+
+    #endregion <Constructor>
+
+    #region <Methods>
+
+    # Returns $true if any event is at Error or Critical level.
+    [bool] HasErrors()
+    {
+        foreach ($event in $this.Events)
+        {
+            if ($event.IsError())
+            {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    # Returns $true if any event is at Warning level.
+    [bool] HasWarnings()
+    {
+        foreach ($event in $this.Events)
+        {
+            if ($event.IsWarning())
+            {
+                return $true
+            }
+        }
+        return $false
+    }
+
+    # Returns all Error and Critical level events.
+    [PSATNtpHealthEvent[]] GetErrors()
+    {
+        $errors = [System.Collections.Generic.List[PSATNtpHealthEvent]]::new()
+        foreach ($event in $this.Events)
+        {
+            if ($event.IsError())
+            {
+                $errors.Add($event)
+            }
+        }
+        return $errors.ToArray()
+    }
+
+    # Returns all Warning level events.
+    [PSATNtpHealthEvent[]] GetWarnings()
+    {
+        $warnings = [System.Collections.Generic.List[PSATNtpHealthEvent]]::new()
+        foreach ($event in $this.Events)
+        {
+            if ($event.IsWarning())
+            {
+                $warnings.Add($event)
+            }
+        }
+        return $warnings.ToArray()
+    }
+
+    # Returns a human-readable summary of the health check result.
+    [string] ToString()
+    {
+        $status  = if ($this.IsHealthy) { 'Healthy' } else { 'Unhealthy' }
+        $errors  = ($this.Events | Where-Object { $_.IsError() }).Count
+        $warns   = ($this.Events | Where-Object { $_.IsWarning() }).Count
+        $sync    = if ($null -ne $this.LastSyncTime) { $this.LastSyncTime.ToString('yyyy-MM-dd HH:mm:ss') } else { 'Unknown' }
+        return "[$status] $($this.ComputerName) — Errors: $errors — Warnings: $warns — LastSync: $sync ($($this.LastSyncSource))"
+    }
+
+    #endregion <Methods>
+}
+#EndRegion '.\Classes\09_PSATNtpHealthCheck.ps1' 96
 #Region '.\Public\Get-PSATADNTPConfiguration.ps1' -1
 
 function Get-PSATADNTPConfiguration
 {
     <#
     .SYNOPSIS
-        Retrieves NTP configuration for specified computers or all Domain Controllers.
+        Retrieves the NTP configuration from one or more computers.
+
     .DESCRIPTION
-        Queries the w32time service and registry. If no computers are specified,
-        it automatically targets all Domain Controllers in the domain using the PDC Emulator.
+        Queries the W32Time service and registry on each target machine via WinRM.
+        When no ComputerName is specified the function automatically discovers all
+        Domain Controllers in the domain using the PDC Emulator (or the server
+        specified by -ADServer) and targets them.
+
+        Each result is returned as a [PSATNtpConfiguration] object containing the
+        active NTP source, the configured synchronisation type, the W32Time service
+        status, and whether the machine is a Domain Controller.
+
     .PARAMETER ComputerName
-        A list of computer names or FQDNs to query.
+        One or more computer names or FQDNs to query. Accepts pipeline input.
+        When omitted all Domain Controllers discovered via AD are targeted.
+
     .PARAMETER ADServer
-        The DC used to discover the list of DCs (if ComputerName is empty). Defaults to the PDC Emulator.
+        The Domain Controller used to query the list of DCs when ComputerName is
+        not provided. Defaults to the PDC Emulator of the current domain.
+
     .PARAMETER Credential
-        Optional credentials for remote access.
+        Credentials for remote WinRM connections via Invoke-Command.
+
     .EXAMPLE
-        Get-PSATADDomainNTPConfiguration -Verbose | Format-Table -AutoSize
+        Get-PSATADNTPConfiguration | Format-Table -AutoSize
+
+        Queries all Domain Controllers in the current domain and displays results.
+
     .EXAMPLE
-        Get-PSATADDomainNTPConfiguration -ComputerName "MemberSrv01", "MemberSrv02" -Credential (Get-Credential)
+        Get-PSATADNTPConfiguration -ComputerName 'SRV01', 'SRV02'
+
+        Queries two specific servers.
+
+    .EXAMPLE
+        Get-PSATADNTPConfiguration -ComputerName 'SRV01' -Credential (Get-Credential)
+
+        Queries a specific server with explicit credentials.
+
+    .EXAMPLE
+        Get-PSATADNTPConfiguration | Where-Object { -not $_.IsServiceRunning() }
+
+        Returns all machines where W32Time is not running.
+
+    .OUTPUTS
+        PSATNtpConfiguration
     #>
     [CmdletBinding()]
+    [OutputType([PSATNtpConfiguration])]
     param (
+        [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $ComputerName,
+
         [Parameter()]
-        [string[]]$ComputerName,
+        [ValidateNotNullOrEmpty()]
+        [string] $ADServer,
+
         [Parameter()]
-        [string]$ADServer = $((Get-ADDomain).PDCEmulator),
-        [Parameter()]
-        [System.Management.Automation.PSCredential]$Credential = [System.Management.Automation.PSCredential]::Empty
+        [System.Management.Automation.PSCredential] $Credential
     )
 
-    process
+    BEGIN
     {
-        try
+        Write-Verbose "Starting $($MyInvocation.MyCommand.Name)"
+
+        if (-not $PSBoundParameters.ContainsKey('ADServer'))
         {
-            $TargetList = @()
-
-            if ($PSBoundParameters.ContainsKey('ComputerName'))
+            try
             {
-                $TargetList = $ComputerName
-                Write-Verbose "Targeting specific computers: $($TargetList -join ', ')"
+                $ADServer = (Get-ADDomain -ErrorAction Stop).PDCEmulator
+                Write-Verbose "PDC Emulator resolved to '$ADServer'"
             }
-            else
+            catch
             {
-                Write-Verbose "No computers specified. Fetching all DCs from PDC: $ADServer"
-                $splatAD = @{
-                    Filter = '*'
-                    Server = $ADServer
-                }
-                if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
-                {
-                    $splatAD.Add("Credential", $Credential)
-                }
-                $TargetList = Get-ADDomainController @splatAD | Select-Object -ExpandProperty HostName
-            }
-
-            if (-not $TargetList)
-            {
-                throw "Target list is empty."
-            }
-
-            Write-Verbose "Querying NTP configuration on $($TargetList.Count) targets..."
-
-            $invokeParams = @{
-                ComputerName = $TargetList
-                ErrorAction  = 'SilentlyContinue'
-                ScriptBlock  = {
-                    try
-                    {
-                        $reg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters" -ErrorAction Stop
-                        $status = w32tm /query /status
-
-                        $sourceMatch = $status | Select-String "Source:"
-                        $source = if ($sourceMatch)
-                        {
-                            $sourceMatch.ToString().Split(":")[1].Trim()
-                        }
-                        else
-                        {
-                            "N/A"
-                        }
-
-                        $isDC = if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\ProductOptions" -ErrorAction SilentlyContinue | Select-String "LanmanNT|ServerNT")
-                        {
-                            $true
-                        }
-                        else
-                        {
-                            $false
-                        }
-
-                        return [PSCustomObject]@{
-                            ComputerName = $env:COMPUTERNAME
-                            NTPSource    = $source
-                            ConfigType   = $reg.Type
-                            Service      = (Get-Service w32time).Status
-                            IsDC         = $isDC
-                        }
-                    }
-                    catch
-                    {
-                        return [PSCustomObject]@{
-                            ComputerName = $env:COMPUTERNAME
-                            NTPSource    = "Error/Unreachable"
-                            ConfigType   = "N/A"
-                            Service      = "N/A"
-                            IsDC         = "Unknown"
-                        }
-                    }
-                }
-            }
-
-            if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
-            {
-                $invokeParams.Add("Credential", $Credential)
-            }
-
-            $Results = Invoke-Command @invokeParams
-
-            if ($Results)
-            {
-                return $Results | Select-Object ComputerName, NTPSource, ConfigType, Service, IsDC | Sort-Object ComputerName
-            }
-            else
-            {
-                Write-Verbose "No results returned. Ensure WinRM is enabled on targets."
+                Write-Error "Failed to resolve PDC Emulator: $($_.Exception.Message)"
+                return
             }
         }
-        catch
-        {
-            Write-Error "Critical Error: $($_.Exception.Message)"
+
+        $script:ntpScriptBlock = {
+            $result = [PSCustomObject]@{
+                ComputerName  = $env:COMPUTERNAME
+                NTPSource     = 'N/A'
+                ConfigType    = 'N/A'
+                ServiceStatus = 'N/A'
+                IsDC          = $false
+            }
+
+            try
+            {
+                $reg = Get-ItemProperty `
+                    -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters' `
+                    -ErrorAction Stop
+                $result.ConfigType = [string]$reg.Type
+
+                $w32Status = w32tm /query /status 2>&1
+                $sourceMatch = $w32Status | Select-String -Pattern 'Source:\s*(.+)'
+                if ($null -ne $sourceMatch)
+                {
+                    $result.NTPSource = $sourceMatch.Matches[0].Groups[1].Value.Trim()
+                }
+
+                $svc = Get-Service -Name 'w32time' -ErrorAction Stop
+                $result.ServiceStatus = $svc.Status.ToString()
+
+                $productType = (Get-ItemProperty `
+                    -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\ProductOptions' `
+                    -ErrorAction SilentlyContinue).ProductType
+                $result.IsDC = $productType -eq 'LanmanNT'
+            }
+            catch
+            {
+                $result.NTPSource     = 'Error'
+                $result.ConfigType    = 'Error'
+                $result.ServiceStatus = 'Error'
+            }
+
+            $result
         }
     }
+
+    PROCESS
+    {
+        $targetList = [System.Collections.Generic.List[string]]::new()
+
+        if ($PSBoundParameters.ContainsKey('ComputerName'))
+        {
+            foreach ($name in $ComputerName)
+            {
+                $targetList.Add($name)
+            }
+            Write-Verbose "Targeting $($targetList.Count) specified computer(s)"
+        }
+        else
+        {
+            Write-Verbose "Discovering Domain Controllers via '$ADServer'"
+            try
+            {
+                $adParams = @{
+                    Filter      = '*'
+                    Server      = $ADServer
+                    ErrorAction = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $adParams['Credential'] = $Credential
+                }
+                $dcs = Get-ADDomainController @adParams |
+                    Select-Object -ExpandProperty HostName
+                foreach ($dc in $dcs)
+                {
+                    $targetList.Add($dc)
+                }
+                Write-Verbose "Found $($targetList.Count) Domain Controller(s)"
+            }
+            catch
+            {
+                Write-Error "Failed to retrieve Domain Controllers from '$ADServer': $($_.Exception.Message)"
+                return
+            }
+        }
+
+        if ($targetList.Count -eq 0)
+        {
+            Write-Error "Target list is empty — no computers to query."
+            return
+        }
+
+        foreach ($target in $targetList)
+        {
+            Write-Verbose "Querying NTP configuration on '$target'"
+            try
+            {
+                $invokeParams = @{
+                    ComputerName = $target
+                    ScriptBlock  = $script:ntpScriptBlock
+                    ErrorAction  = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $invokeParams['Credential'] = $Credential
+                }
+                $raw = Invoke-Command @invokeParams
+                [PSATNtpConfiguration]::new($raw)
+            }
+            catch
+            {
+                Write-Warning "Failed to query '$target': $($_.Exception.Message)"
+                [PSATNtpConfiguration]::new([PSCustomObject]@{
+                    ComputerName  = $target
+                    NTPSource     = 'Error'
+                    ConfigType    = 'Error'
+                    ServiceStatus = 'Error'
+                    IsDC          = $false
+                })
+            }
+        }
+    }
+
+    END
+    {
+        Write-Verbose "Ending $($MyInvocation.MyCommand.Name)"
+    }
 }
-#EndRegion '.\Public\Get-PSATADNTPConfiguration.ps1' 133
+#EndRegion '.\Public\Get-PSATADNTPConfiguration.ps1' 209
 #Region '.\Public\Get-PSATADNtpDrift.ps1' -1
 
 function Get-PSATADNtpDrift
 {
     <#
     .SYNOPSIS
-        Returns NTP time drift data in milliseconds compared to the PDC Emulator.
+        Measures the NTP time drift of computers against the PDC Emulator.
+
     .DESCRIPTION
-        Outputs a PSCustomObject for each target containing drift values and status levels.
+        For each target machine the function runs w32tm /stripchart remotely via
+        WinRM, measuring the time offset of that machine against the PDC Emulator
+        (or the server specified by -Reference).
+
+        When no ComputerName is provided all Domain Controllers are discovered
+        automatically. The PDC Emulator itself is excluded from the list because
+        its drift against itself is always zero.
+
+        Each result is a [PSATNtpDrift] object with the drift in milliseconds, an
+        absolute value, a status level (OK / WARNING / CRITICAL / ERROR) and a
+        sync direction (Ahead / Behind / Unreachable).
+
     .PARAMETER ComputerName
-        List of computers to check. If empty, all DCs are targeted.
+        One or more computer names or FQDNs to measure. Accepts pipeline input.
+        When omitted all Domain Controllers are targeted automatically.
+
+    .PARAMETER ADServer
+        The Domain Controller used to discover the list of DCs when ComputerName is
+        not provided. Defaults to the PDC Emulator of the current domain.
+
+    .PARAMETER Reference
+        The NTP reference server to measure drift against.
+        Defaults to the PDC Emulator of the current domain.
+
+    .PARAMETER WarnThresholdMs
+        Drift threshold in milliseconds above which status becomes WARNING.
+        Default: 500 ms.
+
+    .PARAMETER ErrorThresholdMs
+        Drift threshold in milliseconds above which status becomes CRITICAL.
+        Default: 2000 ms.
+
     .PARAMETER Credential
-        Optional credentials for remote AD discovery.
+        Credentials for remote WinRM connections via Invoke-Command.
+
     .EXAMPLE
-        Get-PSATADNtpDrift | Out-GridView
+        Get-PSATADNtpDrift | Sort-Object AbsDriftMs -Descending | Format-Table -AutoSize
+
+        Measures drift on all DCs and sorts by largest drift first.
+
     .EXAMPLE
-        Get-PSATADNtpDrift -ComputerName "SRV01" | Export-Csv -Path "DriftReport.csv"
+        Get-PSATADNtpDrift -ComputerName 'SRV01' | Export-Csv -Path 'DriftReport.csv' -NoTypeInformation
+
+        Measures drift on a specific server and exports the result to CSV.
+
+    .EXAMPLE
+        Get-PSATADNtpDrift -WarnThresholdMs 200 -ErrorThresholdMs 1000
+
+        Uses custom thresholds for the status classification.
+
+    .EXAMPLE
+        Get-PSATADNtpDrift | Where-Object { $_.IsCritical() }
+
+        Returns only machines with critical drift.
+
+    .OUTPUTS
+        PSATNtpDrift
     #>
     [CmdletBinding()]
+    [OutputType([PSATNtpDrift])]
     param (
+        [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $ComputerName,
+
         [Parameter()]
-        [string[]]$ComputerName,
+        [ValidateNotNullOrEmpty()]
+        [string] $ADServer,
+
         [Parameter()]
-        [System.Management.Automation.PSCredential]$Credential = [System.Management.Automation.PSCredential]::Empty
+        [ValidateNotNullOrEmpty()]
+        [string] $Reference,
+
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $WarnThresholdMs = 500,
+
+        [Parameter()]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int] $ErrorThresholdMs = 2000,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential] $Credential
     )
 
-    process
+    BEGIN
     {
+        Write-Verbose "Starting $($MyInvocation.MyCommand.Name)"
+
         try
         {
-            $PDC = (Get-ADDomain).PDCEmulator
-
-            $TargetList = @()
-            if ($PSBoundParameters.ContainsKey('ComputerName'))
-            {
-                $TargetList = $ComputerName
-            }
-            else
-            {
-                $splat = @{ Filter = '*'; Server = $PDC }
-                if ($Credential -ne [System.Management.Automation.PSCredential]::Empty)
-                {
-                    $splat.Add("Credential", $Credential)
-                }
-                $TargetList = Get-ADDomainController @splat | Select-Object -ExpandProperty HostName
-            }
-
-            # Thresholds (ms)
-            $WarnThresh = 500
-            $ErrThresh = 2000
-
-            $Results = foreach ($Target in $TargetList)
-            {
-                if ($Target -match $PDC.Split('.')[0])
-                {
-                    continue
-                }
-
-                try
-                {
-                    $sample = w32tm /stripchart /computer:$PDC /samples:1 /dataonly | Select-Object -Last 1
-                    if ($sample -match "error")
-                    {
-                        throw "W32Time communication error"
-                    }
-
-                    $rawOffset = ($sample -split ",")[1].Trim().Replace("s", "")
-                    $offsetMs = [math]::Round(([double]$rawOffset * 1000), 2)
-                    $absOffset = [math]::Abs($offsetMs)
-
-                    $status = "OK"
-                    if ($absOffset -gt $ErrThresh)
-                    {
-                        $status = "CRITICAL"
-                    }
-                    elseif ($absOffset -gt $WarnThresh)
-                    {
-                        $status = "WARNING"
-                    }
-
-                    [PSCustomObject]@{
-                        ComputerName = $Target
-                        Reference    = $PDC
-                        DriftMs      = $offsetMs
-                        AbsDriftMs   = $absOffset
-                        Status       = $status
-                        SyncMode     = if ($offsetMs -ge 0)
-                        {
-                            "Ahead"
-                        }
-                        else
-                        {
-                            "Behind"
-                        }
-                        Timestamp    = Get-Date
-                    }
-                }
-                catch
-                {
-                    [PSCustomObject]@{
-                        ComputerName = $Target
-                        Reference    = $PDC
-                        DriftMs      = $null
-                        AbsDriftMs   = $null
-                        Status       = "ERROR"
-                        SyncMode     = "Unreachable"
-                        Timestamp    = Get-Date
-                    }
-                }
-            }
-
-            return $Results
+            $domain = Get-ADDomain -ErrorAction Stop
         }
         catch
         {
-            Write-Error "Critical Error: $($_.Exception.Message)"
+            Write-Error "Failed to contact Active Directory: $($_.Exception.Message)"
+            return
+        }
+
+        if (-not $PSBoundParameters.ContainsKey('ADServer'))
+        {
+            $ADServer = $domain.PDCEmulator
+            Write-Verbose "ADServer resolved to '$ADServer'"
+        }
+
+        if (-not $PSBoundParameters.ContainsKey('Reference'))
+        {
+            $Reference = $domain.PDCEmulator
+            Write-Verbose "Reference NTP server resolved to '$Reference'"
+        }
+
+        # Script block executed on each remote machine.
+        # Returns the raw offset in seconds as a double, or $null on failure.
+        $script:driftScriptBlock = {
+            param ([string] $ReferenceFqdn)
+
+            try
+            {
+                $output = w32tm /stripchart /computer:$ReferenceFqdn /samples:1 /dataonly 2>&1
+                $sample = [string]($output | Select-Object -Last 1)
+
+                if ($sample -match 'error')
+                {
+                    throw "w32tm returned an error: $sample"
+                }
+
+                $parts = $sample -split ','
+                if ($parts.Count -lt 2)
+                {
+                    throw "Unexpected w32tm output format: '$sample'"
+                }
+
+                $rawOffset = $parts[1].Trim().TrimEnd('s').Trim()
+                [double] $rawOffset
+            }
+            catch
+            {
+                $null
+            }
         }
     }
+
+    PROCESS
+    {
+        $targetList = [System.Collections.Generic.List[string]]::new()
+
+        if ($PSBoundParameters.ContainsKey('ComputerName'))
+        {
+            foreach ($name in $ComputerName)
+            {
+                $targetList.Add($name)
+            }
+            Write-Verbose "Targeting $($targetList.Count) specified computer(s)"
+        }
+        else
+        {
+            Write-Verbose "Discovering Domain Controllers via '$ADServer'"
+            try
+            {
+                $adParams = @{
+                    Filter      = '*'
+                    Server      = $ADServer
+                    ErrorAction = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $adParams['Credential'] = $Credential
+                }
+                $dcs = Get-ADDomainController @adParams |
+                    Select-Object -ExpandProperty HostName
+
+                # Exclude the reference server — its drift against itself is always zero.
+                $referenceName = $Reference.Split('.')[0].ToUpper()
+                foreach ($dc in $dcs)
+                {
+                    if ($dc.Split('.')[0].ToUpper() -ne $referenceName)
+                    {
+                        $targetList.Add($dc)
+                    }
+                }
+                Write-Verbose "Found $($targetList.Count) Domain Controller(s) to measure (excluding reference)"
+            }
+            catch
+            {
+                Write-Error "Failed to retrieve Domain Controllers from '$ADServer': $($_.Exception.Message)"
+                return
+            }
+        }
+
+        if ($targetList.Count -eq 0)
+        {
+            Write-Warning "Target list is empty — no computers to measure."
+            return
+        }
+
+        foreach ($target in $targetList)
+        {
+            Write-Verbose "Measuring NTP drift on '$target' against '$Reference'"
+
+            try
+            {
+                $invokeParams = @{
+                    ComputerName = $target
+                    ScriptBlock  = $script:driftScriptBlock
+                    ArgumentList = @($Reference)
+                    ErrorAction  = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $invokeParams['Credential'] = $Credential
+                }
+                $rawOffsetSeconds = Invoke-Command @invokeParams
+            }
+            catch
+            {
+                Write-Warning "Failed to connect to '$target': $($_.Exception.Message)"
+                $rawOffsetSeconds = $null
+            }
+
+            if ($null -eq $rawOffsetSeconds)
+            {
+                [PSATNtpDrift]::new([PSCustomObject]@{
+                    ComputerName = $target
+                    Reference    = $Reference
+                    DriftMs      = $null
+                    AbsDriftMs   = $null
+                    Status       = 'ERROR'
+                    SyncMode     = 'Unreachable'
+                    Timestamp    = Get-Date
+                })
+                continue
+            }
+
+            $driftMs    = [Math]::Round($rawOffsetSeconds * 1000, 2)
+            $absDriftMs = [Math]::Abs($driftMs)
+
+            $status = 'OK'
+            if ($absDriftMs -gt $ErrorThresholdMs)
+            {
+                $status = 'CRITICAL'
+            }
+            elseif ($absDriftMs -gt $WarnThresholdMs)
+            {
+                $status = 'WARNING'
+            }
+
+            $syncMode = if ($driftMs -ge 0) { 'Ahead' } else { 'Behind' }
+
+            [PSATNtpDrift]::new([PSCustomObject]@{
+                ComputerName = $target
+                Reference    = $Reference
+                DriftMs      = $driftMs
+                AbsDriftMs   = $absDriftMs
+                Status       = $status
+                SyncMode     = $syncMode
+                Timestamp    = Get-Date
+            })
+        }
+    }
+
+    END
+    {
+        Write-Verbose "Ending $($MyInvocation.MyCommand.Name)"
+    }
 }
-#EndRegion '.\Public\Get-PSATADNtpDrift.ps1' 118
+#EndRegion '.\Public\Get-PSATADNtpDrift.ps1' 273
 #Region '.\Public\Get-PSATComputerInventory.ps1' -1
 
 function Get-PSATComputerInventory
@@ -1762,3 +2255,290 @@ function Set-PSATDnsDebugLogging
     }
 }
 #EndRegion '.\Public\Set-PSATDnsDebugLogging.ps1' 217
+#Region '.\Public\Test-PSATNtpHealth.ps1' -1
+
+function Test-PSATNtpHealth
+{
+    <#
+    .SYNOPSIS
+        Checks the NTP health of computers by analysing their W32Time event log entries.
+
+    .DESCRIPTION
+        For each target machine Test-PSATNtpHealth queries the System event log remotely
+        via WinRM, filtering for events from the Microsoft-Windows-Time-Service provider
+        within a configurable lookback window.
+
+        Events are classified by their native Windows log level:
+          - Error / Critical : synchronisation failures, no accessible time source (e.g. IDs 29, 129)
+          - Warning          : temporary sync gaps, unreachable peers (e.g. IDs 36, 38, 47)
+          - Information      : successful sync, valid data received (e.g. IDs 35, 37)
+
+        A machine is considered healthy when no Error or Critical events appear in the
+        lookback window. The last successful synchronisation event is extracted to provide
+        LastSyncTime and LastSyncSource even when the machine is currently healthy.
+
+        When no ComputerName is provided all Domain Controllers are automatically
+        discovered via Active Directory.
+
+    .PARAMETER ComputerName
+        One or more computer names or FQDNs to check. Accepts pipeline input.
+        When omitted all Domain Controllers discovered via AD are targeted.
+
+    .PARAMETER Hours
+        Number of hours to look back in the event log. Default: 24.
+
+    .PARAMETER ADServer
+        The Domain Controller used to discover the list of DCs when ComputerName is
+        not provided. Defaults to the PDC Emulator of the current domain.
+
+    .PARAMETER Credential
+        Credentials for remote WinRM connections via Invoke-Command.
+
+    .EXAMPLE
+        Test-PSATNtpHealth | Format-Table -AutoSize
+
+        Checks NTP health on all Domain Controllers over the last 24 hours.
+
+    .EXAMPLE
+        Test-PSATNtpHealth -ComputerName 'SRV01', 'SRV02' -Hours 48
+
+        Checks two specific servers with a 48-hour lookback window.
+
+    .EXAMPLE
+        Test-PSATNtpHealth | Where-Object { -not $_.IsHealthy }
+
+        Returns only machines with NTP errors.
+
+    .EXAMPLE
+        Test-PSATNtpHealth | Where-Object { $_.HasWarnings() } | ForEach-Object { $_.GetWarnings() }
+
+        Lists all warning-level NTP events from machines that have them.
+
+    .EXAMPLE
+        Test-PSATNtpHealth -ComputerName 'DC01' -Credential (Get-Credential)
+
+        Checks a specific DC with explicit credentials.
+
+    .OUTPUTS
+        PSATNtpHealthCheck
+    #>
+    [CmdletBinding()]
+    [OutputType([PSATNtpHealthCheck])]
+    param (
+        [Parameter(ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true, Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [string[]] $ComputerName,
+
+        [Parameter()]
+        [ValidateRange(1, 8760)]
+        [int] $Hours = 24,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $ADServer,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential] $Credential
+    )
+
+    BEGIN
+    {
+        Write-Verbose "Starting $($MyInvocation.MyCommand.Name)"
+
+        if (-not $PSBoundParameters.ContainsKey('ADServer'))
+        {
+            try
+            {
+                $ADServer = (Get-ADDomain -ErrorAction Stop).PDCEmulator
+                Write-Verbose "PDC Emulator resolved to '$ADServer'"
+            }
+            catch
+            {
+                Write-Error "Failed to resolve PDC Emulator: $($_.Exception.Message)"
+                return
+            }
+        }
+
+        $script:healthScriptBlock = {
+            param ([int] $LookbackHours)
+
+            $since = (Get-Date).AddHours(-$LookbackHours)
+
+            $filterHash = @{
+                LogName      = 'System'
+                ProviderName = 'Microsoft-Windows-Time-Service'
+                StartTime    = $since
+            }
+
+            $allEvents = Get-WinEvent -FilterHashtable $filterHash -ErrorAction SilentlyContinue
+
+            $rawEvents = [System.Collections.Generic.List[object]]::new()
+
+            foreach ($evt in $allEvents)
+            {
+                $level = switch ($evt.Level)
+                {
+                    1       { 'Critical' }
+                    2       { 'Error' }
+                    3       { 'Warning' }
+                    default { 'Information' }
+                }
+
+                $rawEvents.Add([PSCustomObject]@{
+                    EventId     = [int]$evt.Id
+                    Level       = $level
+                    Message     = [string]$evt.Message
+                    TimeCreated = [datetime]$evt.TimeCreated
+                })
+            }
+
+            # Extract last successful sync event (IDs 35 and 37 indicate active sync)
+            $syncIds   = @(35, 37)
+            $syncEvent = $allEvents |
+                Where-Object { $_.Id -in $syncIds } |
+                Sort-Object -Property TimeCreated -Descending |
+                Select-Object -First 1
+
+            $lastSyncTime   = $null
+            $lastSyncSource = ''
+
+            if ($null -ne $syncEvent)
+            {
+                $lastSyncTime = [datetime]$syncEvent.TimeCreated
+                if ($syncEvent.Message -match '(?:from|with)\s+([^\s\.,]+)')
+                {
+                    $lastSyncSource = $Matches[1].Trim()
+                }
+            }
+
+            [PSCustomObject]@{
+                RawEvents      = $rawEvents.ToArray()
+                LastSyncTime   = $lastSyncTime
+                LastSyncSource = $lastSyncSource
+            }
+        }
+    }
+
+    PROCESS
+    {
+        $targetList = [System.Collections.Generic.List[string]]::new()
+
+        if ($PSBoundParameters.ContainsKey('ComputerName'))
+        {
+            foreach ($name in $ComputerName)
+            {
+                $targetList.Add($name)
+            }
+            Write-Verbose "Targeting $($targetList.Count) specified computer(s)"
+        }
+        else
+        {
+            Write-Verbose "Discovering Domain Controllers via '$ADServer'"
+            try
+            {
+                $adParams = @{
+                    Filter      = '*'
+                    Server      = $ADServer
+                    ErrorAction = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $adParams['Credential'] = $Credential
+                }
+                $dcs = Get-ADDomainController @adParams |
+                    Select-Object -ExpandProperty HostName
+                foreach ($dc in $dcs)
+                {
+                    $targetList.Add($dc)
+                }
+                Write-Verbose "Found $($targetList.Count) Domain Controller(s)"
+            }
+            catch
+            {
+                Write-Error "Failed to retrieve Domain Controllers from '$ADServer': $($_.Exception.Message)"
+                return
+            }
+        }
+
+        if ($targetList.Count -eq 0)
+        {
+            Write-Error "Target list is empty — no computers to check."
+            return
+        }
+
+        foreach ($target in $targetList)
+        {
+            Write-Verbose "Checking NTP health on '$target' (last $Hours hour(s))"
+
+            $rawResult  = $null
+            $reachable  = $true
+
+            try
+            {
+                $invokeParams = @{
+                    ComputerName = $target
+                    ScriptBlock  = $script:healthScriptBlock
+                    ArgumentList = @($Hours)
+                    ErrorAction  = 'Stop'
+                }
+                if ($PSBoundParameters.ContainsKey('Credential'))
+                {
+                    $invokeParams['Credential'] = $Credential
+                }
+                $rawResult = Invoke-Command @invokeParams
+            }
+            catch
+            {
+                Write-Warning "Failed to connect to '$target': $($_.Exception.Message)"
+                $reachable = $false
+            }
+
+            if (-not $reachable)
+            {
+                [PSATNtpHealthCheck]::new([PSCustomObject]@{
+                    ComputerName   = $target
+                    IsHealthy      = $false
+                    Events         = [PSATNtpHealthEvent[]]@()
+                    LastSyncTime   = $null
+                    LastSyncSource = ''
+                    CheckedAt      = Get-Date
+                })
+                continue
+            }
+
+            $events = [System.Collections.Generic.List[PSATNtpHealthEvent]]::new()
+            if ($null -ne $rawResult -and $null -ne $rawResult.RawEvents)
+            {
+                foreach ($e in $rawResult.RawEvents)
+                {
+                    $events.Add([PSATNtpHealthEvent]::new($e))
+                }
+            }
+
+            $hasErrors = $false
+            foreach ($e in $events)
+            {
+                if ($e.IsError())
+                {
+                    $hasErrors = $true
+                    break
+                }
+            }
+
+            [PSATNtpHealthCheck]::new([PSCustomObject]@{
+                ComputerName   = $target
+                IsHealthy      = -not $hasErrors
+                Events         = $events.ToArray()
+                LastSyncTime   = if ($null -ne $rawResult) { $rawResult.LastSyncTime } else { $null }
+                LastSyncSource = if ($null -ne $rawResult) { [string]$rawResult.LastSyncSource } else { '' }
+                CheckedAt      = Get-Date
+            })
+        }
+    }
+
+    END
+    {
+        Write-Verbose "Ending $($MyInvocation.MyCommand.Name)"
+    }
+}
+#EndRegion '.\Public\Test-PSATNtpHealth.ps1' 285
