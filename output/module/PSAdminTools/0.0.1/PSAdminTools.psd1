@@ -69,7 +69,7 @@ RequiredModules = @()
 # NestedModules = @()
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = @('Get-PSATADNTPConfiguration','Get-PSATADNtpDrift','Get-PSATComputerInventory','Get-PSATDhcpScopeInfo','Get-PSATDnsDebugLog','Set-PSATDnsDebugLogging','Test-PSATNtpHealth')
+FunctionsToExport = @('Get-PSATADNTPConfiguration','Get-PSATADNtpDrift','Get-PSATADServerLogonAudit','Get-PSATComputerInventory','Get-PSATDhcpScopeInfo','Get-PSATDnsDebugLog','Set-PSATDnsDebugLogging','Test-PSATNtpHealth')
 
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = @()
@@ -107,7 +107,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = '## [0.0.1] - 2026-08-25
+        ReleaseNotes = '## [0.0.1] - 2026-09-01
 
 ### Added
 

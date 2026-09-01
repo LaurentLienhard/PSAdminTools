@@ -1086,6 +1086,181 @@ function Get-PSATADNtpDrift
     }
 }
 #EndRegion '.\Public\Get-PSATADNtpDrift.ps1' 273
+#Region '.\Public\Get-PSATADServerLogonAudit.ps1' -1
+
+function Get-PSATADServerLogonAudit {
+    <#
+    .SYNOPSIS
+        Audits administrative and user logon events using high-performance server-side XPath filtering.
+    .DESCRIPTION
+        Queries Security (Event ID 4624) and TerminalServices-LocalSessionManager (Event IDs 21, 25)
+        logs on target hosts. Utilizes server-side XML/XPath execution to minimize RPC payload overhead,
+        memory allocation, and remote execution latency. Fully sanitized and sanitized for enterprise deployment.
+    .PARAMETER ComputerName
+        The target host name or FQDN to query. Defaults to 'DC01.corp.contoso.com'.
+    .PARAMETER StartTime
+        Start of the search window. Defaults to 1 hour prior to execution time.
+    .PARAMETER EndTime
+        End of the search window. Defaults to current execution time.
+    .PARAMETER Credential
+        Optional explicit PSCredential for remote RPC / WinRM connections.
+    .EXAMPLE
+        Get-ADServerLogonAudit -ComputerName "DC01.corp.contoso.com" -StartTime (Get-Date).AddHours(-2) | Format-Table -AutoSize
+    .EXAMPLE
+        'DC01.corp.contoso.com', 'DC02.corp.contoso.com' | Get-ADServerLogonAudit -Credential (Get-Credential)
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
+    [OutputType([PSCustomObject])]
+    param (
+        [Parameter(Mandatory = $false, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ComputerName = 'DC01.corp.contoso.com',
+
+        [Parameter(Mandatory = $false)]
+        [datetime]$StartTime = (Get-Date).AddHours(-1),
+
+        [Parameter(Mandatory = $false)]
+        [datetime]$EndTime = (Get-Date),
+
+        [Parameter(Mandatory = $false)]
+        [System.Management.Automation.PSCredential]
+        [System.Management.Automation.Credential()]$Credential
+    )
+
+    begin {
+        $ErrorActionPreference = 'Stop'
+        Write-Verbose -Message "Initializing optimized logon session audit subsystem."
+    }
+
+    process {
+        if ($PSCmdlet.ShouldProcess($ComputerName, "Audit Security and TerminalServices Logon Events via XPath")) {
+
+            # Convert system datetimes to ISO 8601 UTC format for XPath query execution
+            $utcStart = $StartTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            $utcEnd   = $EndTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+
+            Write-Verbose -Message "Target Host: $ComputerName | Window (UTC): $utcStart to $utcEnd"
+
+            $splatParams = @{
+                ComputerName = $ComputerName
+                ErrorAction  = 'Stop'
+            }
+            if ($PSBoundParameters.ContainsKey('Credential')) {
+                $splatParams['Credential'] = $Credential
+            }
+
+            $auditResults = [System.Collections.Generic.List[PSObject]]::new()
+
+            # ------------------------------------------------------------------
+            # 1. Audit Security Log (Event ID 4624) via Server-Side XPath
+            # ------------------------------------------------------------------
+            # Server-side exclusion of system accounts (SYSTEM, LOCAL SERVICE, NETWORK SERVICE, ANONYMOUS LOGON, DWM-*, UMFD-*)
+            $securityXPath = @"
+*[System[(EventID=4624) and TimeCreated[@SystemTime>='$utcStart' and @SystemTime<='$utcEnd']]]
+and
+*[EventData[
+    Data[@Name='TargetUserName'] != 'SYSTEM' and
+    Data[@Name='TargetUserName'] != 'LOCAL SERVICE' and
+    Data[@Name='TargetUserName'] != 'NETWORK SERVICE' and
+    Data[@Name='TargetUserName'] != 'ANONYMOUS LOGON' and
+    not(starts-with(Data[@Name='TargetUserName'], 'DWM-')) and
+    not(starts-with(Data[@Name='TargetUserName'], 'UMFD-')) and
+    Data[@Name='TargetDomainName'] != 'NT AUTHORITY'
+]]
+"@
+
+            Write-Verbose -Message "Executing server-side XPath query against Security Log on target: $ComputerName"
+
+            try {
+                $secEvents = Get-WinEvent @splatParams -LogName 'Security' -FilterXPath $securityXPath
+
+                foreach ($evt in $secEvents) {
+                    $xml = [xml]$evt.ToXml()
+                    $eventData = @{}
+                    foreach ($data in $xml.Event.EventData.Data) {
+                        if ($data.Name) {
+                            $eventData[$data.Name] = $data.'#text'
+                        }
+                    }
+
+                    $rawLogonType = [string]$eventData['LogonType']
+                    $logonTypeDesc = switch ($rawLogonType) {
+                        '2'  { "Interactive (Console)" }
+                        '3'  { "Network (WinRM/SMB)" }
+                        '10' { "RemoteInteractive (RDP)" }
+                        '11' { "CachedInteractive" }
+                        Default { "LogonType: $rawLogonType" }
+                    }
+
+                    $domainUser = "$($eventData['TargetDomainName'])\$($eventData['TargetUserName'])"
+
+                    $auditResults.Add([PSCustomObject]@{
+                        Timestamp    = $evt.TimeCreated
+                        LogSource    = 'Security (ID 4624)'
+                        Account      = $domainUser
+                        LogonType    = $logonTypeDesc
+                        SourceIP     = $eventData['IpAddress']
+                        ComputerName = $evt.MachineName
+                    })
+                }
+            }
+            catch [System.UnauthorizedAccessException] {
+                Write-Error -Message "Access Denied reading Security Event Log on target '$ComputerName': $($_.Exception.Message)" -ErrorAction Continue
+            }
+            catch [System.Diagnostics.Eventing.Reader.EventLogNotFoundException] {
+                Write-Warning -Message "Security Log unavailable or inaccessible on target host '$ComputerName'."
+            }
+            catch [System.Exception] {
+                $innerMsg = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+                Write-Warning -Message "Failed processing Security Log query on '$ComputerName': $innerMsg"
+            }
+
+            # ------------------------------------------------------------------
+            # 2. Audit TerminalServices Operational Log (Event IDs 21, 25)
+            # ------------------------------------------------------------------
+            $tsXPath = @"
+*[System[(EventID=21 or EventID=25) and TimeCreated[@SystemTime>='$utcStart' and @SystemTime<='$utcEnd']]]
+"@
+
+            Write-Verbose -Message "Executing XPath query against TerminalServices Log on target: $ComputerName"
+
+            try {
+                $tsEvents = Get-WinEvent @splatParams -LogName 'Microsoft-Windows-TerminalServices-LocalSessionManager/Operational' -FilterXPath $tsXPath
+
+                foreach ($evt in $tsEvents) {
+                    $xml = [xml]$evt.ToXml()
+                    $userData = $xml.Event.UserData.EventXML
+
+                    $user = $userData.User
+                    $ip   = $userData.Address
+
+                    $action = if ($evt.Id -eq 21) { "RDP Session Shell Started" } else { "RDP Session Reconnected" }
+
+                    $auditResults.Add([PSCustomObject]@{
+                        Timestamp    = $evt.TimeCreated
+                        LogSource    = "TerminalServices (ID $($evt.Id))"
+                        Account      = $user
+                        LogonType    = $action
+                        SourceIP     = $ip
+                        ComputerName = $evt.MachineName
+                    })
+                }
+            }
+            catch [System.Exception] {
+                # Catch non-existent log or zero events gracefully without halting pipeline
+                Write-Verbose -Message "No TerminalServices operational events retrieved from '$ComputerName': $($_.Exception.Message)"
+            }
+
+            # Return chronologically sorted structured stream output
+            $auditResults | Sort-Object -Property Timestamp
+        }
+    }
+
+    end {
+        Write-Verbose -Message "Logon audit execution cycle completed."
+    }
+}
+#EndRegion '.\Public\Get-PSATADServerLogonAudit.ps1' 173
 #Region '.\Public\Get-PSATComputerInventory.ps1' -1
 
 function Get-PSATComputerInventory
